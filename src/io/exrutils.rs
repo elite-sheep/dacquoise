@@ -1,7 +1,11 @@
 // Copyright 2020 TwoCookingMice
 
+use openexr::frame_buffer::FrameBuffer;
 use openexr::frame_buffer::FrameBufferMut;
+use openexr::header::Header;
 use openexr::input::InputFile;
+use openexr::PixelType;
+use openexr::ScanlineOutputFile;
 
 // Read EXR Image from file
 pub fn read_exr_from_file(file_path: &str) {
@@ -26,4 +30,25 @@ pub fn read_exr_from_file(file_path: &str) {
     }
 
     log::info!("OpenEXR loaded, width = {}, height = {}.", width, height);
+}
+
+// Write EXR Image to file
+pub fn write_exr_to_file(image: &std::vec::Vec<(f32, f32, f32)>, 
+                         width: u32,
+                         height: u32,
+                         file_path: &str) {
+    log::info!("Starting writing openexr images: {}.", file_path);
+
+    let mut file = std::fs::File::create(file_path).unwrap();
+    let mut output_file = ScanlineOutputFile::new(
+        &mut file,
+        Header::new()
+        .set_resolution(width, height)
+        .add_channel("R", PixelType::FLOAT)
+        .add_channel("G", PixelType::FLOAT)
+        .add_channel("B", PixelType::FLOAT)).unwrap();
+
+    let mut frame_buffer = FrameBuffer::new(width, height);
+    frame_buffer.insert_channels(&["R", "G", "B"], &image);
+    output_file.write_pixels(&frame_buffer).unwrap();
 }
