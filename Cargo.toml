@@ -1,5 +1,5 @@
 [package]
-name = "Dacquoise"
+name = "dacquoise"
 version = "0.1.0"
 authors = ["TwoCookingMice <wyc8094@gmail.com>"]
 edition = "2018"
@@ -7,4 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+env_logger = "0.7.0"
+log = "0.4"
 openexr  = "0.7.0"
