@@ -1,0 +1,11 @@
+// Copyright 2020 TwoCookingMice
+
+#[path = "./io/exrutils.rs"] mod exr_utils;
+
+fn main() {
+    env_logger::init();
+
+    let test_exr_name = String::from("/Users/apple/Desktop/cbox-path.exr");
+    exr_utils::read_exr_from_file(&test_exr_name);
+    println!("Hello, world!");
+}
