@@ -1,3 +1,6 @@
+
+name: build_check
+
 on:
   push:
     branches:
@@ -5,8 +8,6 @@ on:
     pull_request:
       branches:
         - master
-
- name: build_check
 
  jobs:
    build:
