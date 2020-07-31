@@ -1,4 +1,4 @@
-# Dacquoise
+# Dacquoise ![Building Status](https://github.com/Aaron19960821/Dacquoise/workflows/build_check/badge.svg)
 
 **Dacquoise** is an offline physically-based renderer written in **Rust**.  
 
