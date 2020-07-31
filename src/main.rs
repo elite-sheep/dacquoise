@@ -1,8 +1,14 @@
 // Copyright 2020 TwoCookingMice
 
-#[path = "./io/exrutils.rs"] mod exr_utils;
+mod io;
+mod math;
+
+use self::io::exr_utils;
+
+use std::env;
 
 fn main() {
+    env::set_var("RUST_LOG", "info");
     env_logger::init();
 
     let test_exr_name = String::from("/Users/apple/Desktop/cbox-path.exr");
