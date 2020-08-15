@@ -1,5 +1,7 @@
 // Copyright 2020 TwoCookingMice
 
+pub extern crate nalgebra as na;
+
 mod io;
 mod math;
 
