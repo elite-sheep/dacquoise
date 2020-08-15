@@ -1,4 +1,6 @@
-// Copyright 2020 TwoCookingMice
+/* Copyright 2020 @TwoCookingMice */
+
+use crate::math::constants::{Float, UInt};
 
 use openexr::frame_buffer::FrameBuffer;
 use openexr::frame_buffer::FrameBufferMut;
@@ -33,9 +35,9 @@ pub fn read_exr_from_file(file_path: &str) {
 }
 
 // Write EXR Image to file
-pub fn write_exr_to_file(image: &std::vec::Vec<(f32, f32, f32)>, 
-                         width: u32,
-                         height: u32,
+pub fn write_exr_to_file(image: &std::vec::Vec<(Float, Float, Float)>, 
+                         width: UInt,
+                         height: UInt,
                          file_path: &str) {
     log::info!("Starting writing openexr images: {}.", file_path);
 
