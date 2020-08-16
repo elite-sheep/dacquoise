@@ -1,6 +1,7 @@
 // Copyright 2020 @TwoCookingMice
 
-use super::constants::{Float, Vector3f, FLOAT_MIN, FLOAT_MAX};
+use super::constants::{Float, Vector2f, Vector3f, 
+                       FLOAT_MIN, FLOAT_MAX};
 use super::ray::{Ray3f};
 
 pub struct AABB {
@@ -54,25 +55,30 @@ impl AABB {
     pub fn ray_intersect(&self, ray: &Ray3f) -> bool {
         let mut result = true;
 
-        let o = ray.origin();
-        let d = ray.dir();
-        let mut t = FLOAT_MAX;
-        for idx in 0..3 {
-            let t1 = (self.p_min[idx] - o[idx]) / d[idx];
-            let t2 = (self.p_max[idx] - o[idx]) / d[idx];
-
-            if t1 < 0.0 && t2 < 0.0 {
-                result = false;
-                break;
-            } else if (t1 > 0.0) {
-                t = t.max(t1);
-            } else if (t2 > 0.0) {
-                t = t.max(t2);
+        if self.is_valid() {
+            let o = ray.origin();
+            let d = ray.dir();
+            let mut t = Vector2f::new(FLOAT_MIN, FLOAT_MAX);
+            for idx in 0..3 {
+                let t1 = (self.p_min[idx] - o[idx]) / d[idx];
+                let t2 = (self.p_max[idx] - o[idx]) / d[idx];
+    
+                if t1 < 0.0 && t2 < 0.0 {
+                    result = false;
+                    break;
+                }
+    
+                t[0] = t[0].max(t1);
+                t[1] = t[1].min(t2);
             }
-        }
-
-        if result {
-            result = ray.test_segment(t);
+    
+            if result && t[0] <= t[1] {
+                result &= ray.test_segment(t[0]) | ray.test_segment(t[1]);
+            } else {
+                result = false;
+            }
+        } else {
+            result = false;
         }
 
         result
@@ -114,8 +120,9 @@ impl AABB {
 /* Test for AABB */
 #[cfg(test)]
 mod tests {
-    use super::Vector3f;
     use super::AABB;
+    use super::Ray3f;
+    use super::Vector3f;
 
     #[test]
     fn test_aabb_geometry() {
@@ -142,5 +149,24 @@ mod tests {
         bbox1.expand_by_aabb(&bbox);
         assert_ne!((bbox1.p_min[0] + 1.0f32), 0.000001);
         assert_ne!((bbox1.p_max[0] - 6.0f32), 0.000001);
+    }
+
+    #[test]
+    fn test_aabb_intersect() {
+        let o1 = Vector3f::new(0.0, 0.0, 0.0);
+        let d1 = Vector3f::new(1.0, 1.0, 1.0);
+
+        let bbox = AABB::new(Vector3f::new(-1.0, -1.0, -1.0),
+                             Vector3f::new(1.0, 1.0, 1.0));
+
+        let r1 = Ray3f::new(o1, d1, Some(0.0), Some(1.0));
+        let r2 = Ray3f::new(o1, d1, Some(0.0), Some(10.0));
+        assert_eq!(bbox.ray_intersect(&r1), false);
+        assert_eq!(bbox.ray_intersect(&r2), true);
+
+        let o2 = Vector3f::new(-1.1, 0.0, 0.0);
+        let d2 = Vector3f::new(-0.1, 10.0, 10.0);
+        let r3 = Ray3f::new(o2, d2, None, None);
+        assert_eq!(bbox.ray_intersect(&r3), false);
     }
 }
