@@ -37,6 +37,14 @@ impl Ray3f {
             true
         }
     }
+
+    pub fn test_segment(&self, t: Float) -> bool {
+        if t >= self.min_t && t <= self.max_t {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 /* Tests for Ray */
