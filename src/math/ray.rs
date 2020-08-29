@@ -5,8 +5,8 @@ use super::constants::{Float, Vector3f};
 pub struct Ray3f {
     origin: Vector3f,
     dir: Vector3f,
-    min_t: Float,
-    max_t: Float
+    pub min_t: Float,
+    pub max_t: Float
 }
 
 impl Ray3f {

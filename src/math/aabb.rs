@@ -1,6 +1,6 @@
 // Copyright 2020 @TwoCookingMice
 
-use super::constants::{Float, Vector2f, Vector3f, 
+use super::constants::{Int, Float, Vector2f, Vector3f, 
                        FLOAT_MIN, FLOAT_MAX};
 use super::ray::{Ray3f};
 
@@ -104,6 +104,20 @@ impl AABB {
         self.p_max - self.p_min
     }
 
+    pub fn max_extent(&self) -> Int {
+        let diagnal = self.diagnal();
+        let ans: Int;
+        if diagnal[0] > diagnal[1] && diagnal[0] > diagnal[2] {
+            ans = 0;
+        } else if diagnal[1] > diagnal[2] {
+            ans = 1;
+        } else {
+            ans = 2;
+        }
+
+        ans
+    }
+
     pub fn is_valid(&self) -> bool {
         let mut result = true;
         for idx in 0..3 {
@@ -144,6 +158,7 @@ mod tests {
         bbox.expand_by_point(&Vector3f::new(-1.0, 5.0, 6.0));
         assert_ne!((bbox.p_min[0] + 1.0f32), 0.000001);
         assert_ne!((bbox.p_max[0] - 6.0f32), 0.000001);
+        assert_eq!(bbox.max_extent(), 0);
 
         let mut bbox1: AABB = AABB::default();
         bbox1.expand_by_aabb(&bbox);
