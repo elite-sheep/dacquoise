@@ -1,4 +1,4 @@
-/* Copyright 2020 @Yuchen Wong */
+// Copyright 2020 @TwoCookingMice
 
 extern crate nalgebra as na;
 
@@ -27,6 +27,8 @@ pub const PI: Float = std::f32::consts::PI;
 pub const INV_PI: Float = 1.0 / std::f32::consts::PI;
 pub const SQUARE_2: Float = std::f32::consts::SQRT_2;
 pub const INV_SQUARE_2: Float = SQUARE_2 / 2.0;
+pub const FLOAT_MIN: Float = std::f32::MIN;
+pub const FLOAT_MAX: Float = std::f32::MAX;
 
 #[cfg(test)]
 mod tests {
