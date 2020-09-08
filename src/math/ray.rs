@@ -2,6 +2,7 @@
 
 use super::constants::{Float, Vector3f};
 
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Ray3f {
     origin: Vector3f,
     dir: Vector3f,
