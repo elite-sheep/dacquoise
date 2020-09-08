@@ -4,3 +4,4 @@ pub mod aabb;
 pub mod constants;
 pub mod ray;
 pub mod transform;
+pub mod spectrum;
