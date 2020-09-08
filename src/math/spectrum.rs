@@ -3,6 +3,12 @@
 use super::constants::{Float, Vector3f};
 use std::ops;
 
+// Trait definition
+pub trait Spectrum {
+    fn is_black(&self) -> bool;
+    fn value(&self) -> Float;
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct RGBSpectrum {
     rgb: Vector3f
@@ -140,15 +146,11 @@ impl ops::SubAssign for RGBSpectrum {
     }
 }
 
-impl RGBSpectrum {
-    pub fn new(r: Float, g: Float, b: Float) -> Self {
-        Self { rgb: Vector3f::new(r, g, b) }
-    }
-
-    pub fn is_black(&self) -> bool {
+impl Spectrum for RGBSpectrum {
+    fn is_black(&self) -> bool {
         let mut result = true;
         for idx in 0..3 {
-            if self.rgb[idx] != 0.0f32  { 
+            if self.rgb[idx] != 0.0f32 {
                 result = false;
                 break;
             }
@@ -156,12 +158,23 @@ impl RGBSpectrum {
 
         result
     }
+
+    fn value(&self) -> Float {
+        0.212671f32 * self.rgb[0] + 0.715160f32 * self.rgb[1] + 0.072169 * self.rgb[2]
+    }
+}
+
+impl RGBSpectrum {
+    pub fn new(r: Float, g: Float, b: Float) -> Self {
+        Self { rgb: Vector3f::new(r, g, b) }
+    }
 }
 
 /* Test for spectrum */
 #[cfg(test)]
 mod tests {
     use super::RGBSpectrum;
+    use super::Spectrum;
 
     #[test]
     fn test_rgb_spectrum_ops() {
@@ -174,9 +187,12 @@ mod tests {
         let rgb2 = RGBSpectrum::new(0.5, 0.5, 1.4);
 
         let mut rgb3 = rgb1 + rgb2;
-        assert_ne!((rgb3[2] - 2.4f32), 0.000001);
+        assert_ne!((rgb3[2] - 2.4f32).abs(), 0.000001);
 
         rgb3 -= rgb2;
-        assert_ne!((rgb3[2] - 0.4f32), 0.000001);
+        assert_ne!((rgb3[2] - 1.0f32).abs(), 0.000001);
+
+        rgb3 = rgb3 * 2.0f32;
+        assert_ne!((rgb3[0] - 2.0f32).abs(), 0.000001);
     }
 }
