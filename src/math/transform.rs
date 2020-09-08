@@ -3,6 +3,7 @@
 use super::constants::{Vector3f, Matrix4f};
 use super::ray::Ray3f;
 
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Transform {
     matrix: Matrix4f,
     inv_matrix: Matrix4f

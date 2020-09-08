@@ -4,6 +4,7 @@ use super::constants::{Int, Float, Vector2f, Vector3f,
                        FLOAT_MIN, FLOAT_MAX};
 use super::ray::{Ray3f};
 
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct AABB {
     pub p_min: Vector3f,
     pub p_max: Vector3f
