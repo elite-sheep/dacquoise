@@ -1,13 +1,11 @@
 /* Copyright 2020 @TwoCookingMice */
 
-use crate::math::constants::{Float, UInt};
+use crate::math::constants::{ Float, UInt };
 
-use openexr::frame_buffer::FrameBuffer;
-use openexr::frame_buffer::FrameBufferMut;
+use openexr::frame_buffer::{ FrameBuffer, FrameBufferMut };
 use openexr::header::Header;
 use openexr::input::InputFile;
-use openexr::PixelType;
-use openexr::ScanlineOutputFile;
+use openexr::{ PixelType, ScanlineOutputFile };
 
 // Read EXR Image from file
 pub fn read_exr_from_file(file_path: &str) {
