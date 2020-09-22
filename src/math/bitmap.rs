@@ -1,6 +1,6 @@
 // Copyright 2020 @TwoCookingMice
 
-use super::constants::{ Int, Vector3f, Vector2i };
+use super::constants::{ Float, Int, Vector3f, Vector2i };
 
 use std::ops;
 use std::vec::Vec;
@@ -45,6 +45,20 @@ impl Bitmap {
 
     pub fn height(&self) -> usize {
         self.height
+    }
+
+    pub fn raw_copy(&self) -> Vec<(Float, Float, Float)> {
+        let mut raw_copy = vec!((0.0, 0.0, 0.0); (self.width * self.height) as usize);
+        for i in 0..self.height {
+            for j in 0..self.width {
+                let index = (i * self.width + j) as usize;
+                raw_copy[index].0 = self.data[index][0];
+                raw_copy[index].1 = self.data[index][1];
+                raw_copy[index].2 = self.data[index][2];
+            }
+        }
+
+        raw_copy
     }
 }
 
