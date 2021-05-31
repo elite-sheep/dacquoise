@@ -1,6 +1,6 @@
 // Copyright 2020 @TwoCookingMice
 
-use super::constants::{ Float, Int, Vector3f, Vector2i };
+use super::constants::{ Float, Vector3f };
 
 use std::ops;
 use std::vec::Vec;
@@ -64,9 +64,6 @@ impl Bitmap {
 
 /* Test for Bitmap */
 mod tests {
-    use super::Bitmap;
-    use super::{ Vector3f };
-
     #[test]
     fn test_bitmap_basic_functions() {
         let mut bitmap = Bitmap::new(256usize, 256usize);

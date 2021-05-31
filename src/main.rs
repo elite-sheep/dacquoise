@@ -15,7 +15,7 @@ fn main() {
     env::set_var("RUST_LOG", "info");
     env_logger::init();
 
-    let test_exr_name = String::from("/Users/apple/Desktop/test.exr");
+    let test_exr_name = String::from("/home/yucwang/Desktop/test.exr");
     let mut bitmap = Bitmap::new(256, 256);
     for i in 0..256 {
         for j in 0..256 {
