@@ -1,6 +1,6 @@
 // Copyright 2020 @TwoCookingMice
 
-use super::constants::{Float, Vector3f};
+use super::constants::{ Float, Vector3f };
 use std::ops;
 
 // Trait definition

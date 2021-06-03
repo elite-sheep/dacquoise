@@ -1,8 +1,8 @@
 // Copyright 2020 @TwoCookingMice
 
-use super::constants::{Int, Float, Vector2f, Vector3f, 
-                       FLOAT_MIN, FLOAT_MAX};
-use super::ray::{Ray3f};
+use super::constants::{ Int, Float, Vector2f, Vector3f, 
+                       FLOAT_MIN, FLOAT_MAX };
+use super::ray::{ Ray3f };
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct AABB {

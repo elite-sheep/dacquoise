@@ -1,6 +1,6 @@
 // Copyright 2020 @TwoCookingMice
 
-use super::constants::{Vector3f, Matrix4f};
+use super::constants::{ Vector3f, Matrix4f };
 use super::ray::Ray3f;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
