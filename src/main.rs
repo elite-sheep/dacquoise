@@ -7,9 +7,6 @@ mod io;
 mod math;
 mod renderers;
 
-use self::io::exr_utils;
-use self::math::constants::{ Vector3f };
-use self::math::bitmap::Bitmap;
 use self::math::spectrum::{ RGBSpectrum };
 use self::renderers::simple::{ SimpleRenderer, Renderer };
 
