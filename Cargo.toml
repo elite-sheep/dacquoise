@@ -1,3 +1,5 @@
+# Copyright @yucwang 2023
+
 [package]
 name = "dacquoise"
 version = "0.1.0"
@@ -10,4 +12,7 @@ edition = "2018"
 env_logger = "0.7.0"
 log = "0.4"
 nalgebra = "0.21.1"
-openexr  = "0.7.0"
+exr  = "1.5.3"
+
+[profile.release]
+lto = true

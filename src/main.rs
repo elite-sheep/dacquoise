@@ -7,7 +7,7 @@ mod io;
 mod math;
 mod renderers;
 
-use self::math::spectrum::{ RGBSpectrum };
+use self::math::spectrum::RGBSpectrum;
 use self::renderers::simple::{ SimpleRenderer, Renderer };
 
 use std::env;
