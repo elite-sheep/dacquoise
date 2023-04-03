@@ -1,6 +1,6 @@
 /* Copyright 2020 @TwoCookingMice */
 
-use crate::math::constants::{ Float, UInt };
+use crate::math::constants::Float;
 
 use exr::prelude::*;
 
@@ -43,17 +43,4 @@ pub fn write_exr_to_file(image: &std::vec::Vec<(Float, Float, Float)>,
         Ok(()) => println!("EXR written to: {}.", file_path),
         Err(e) => println!("EXR written error: {}.", e.to_string())
     }
-
-    // let mut file = std::fs::File::create(file_path).unwrap();
-    // let mut output_file = ScanlineOutputFile::new(
-    //     &mut file,
-    //     Header::new()
-    //     .set_resolution(width, height)
-    //     .add_channel("R", PixelType::FLOAT)
-    //     .add_channel("G", PixelType::FLOAT)
-    //     .add_channel("B", PixelType::FLOAT)).unwrap();
-
-    // let mut frame_buffer = FrameBuffer::new(width, height);
-    // frame_buffer.insert_channels(&["R", "G", "B"], &image);
-    // output_file.write_pixels(&frame_buffer).unwrap();
 }
