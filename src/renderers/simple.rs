@@ -1,12 +1,12 @@
 // Copyright @yucwang 2021
 
-use crate::core::computation_node::{ Computation_Node };
+use crate::core::computation_node::Computation_Node;
 use crate::io::exr_utils;
-use crate::math::bitmap::{ Bitmap };
-use crate::math::constants::{ Vector3f };
-use crate::math::spectrum::{ RGBSpectrum };
+use crate::math::bitmap::Bitmap;
+use crate::math::constants::Vector3f;
+use crate::math::spectrum::RGBSpectrum;
 
-pub use super::renderer::{ Renderer };
+pub use super::renderer::Renderer;
 
 pub struct SimpleRenderer {
     colors: [RGBSpectrum; 4]
@@ -37,9 +37,9 @@ impl Renderer for SimpleRenderer {
         }
 
         exr_utils::write_exr_to_file(&tmp_bitmap.raw_copy(), 
-                                     256 as u32, 
-                                     256 as u32, 
-                                     "/home/yucwang/Desktop/test.exr");
+                                     256 as usize, 
+                                     256 as usize, 
+                                     "./test.exr");
     }
 }
 
