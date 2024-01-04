@@ -22,6 +22,10 @@ pub struct BSDFEvalResult {
 
 pub trait BSDF {
     fn eval(&self, sample_record: BSDFSampleRecord) -> BSDFEvalResult;
-    fn sample(&self, u1: Vector2f, u2: Vector2f) -> BSDFSampleRecord;
-    fn sample_and_eval(&self, u1: Vector2f, u2: Vector2f) -> BSDFEvalResult;
+    fn sample(&self, u1: Vector2f, 
+                     u2: Vector2f,
+                     wi: Vector3f) -> BSDFSampleRecord;
+    fn sample_and_eval(&self, u1: Vector2f, 
+                              u2: Vector2f,
+                              wi: Vector3f) -> BSDFEvalResult;
 }
