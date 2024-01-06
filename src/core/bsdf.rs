@@ -29,3 +29,32 @@ pub trait BSDF {
                               u2: Vector2f,
                               wi: Vector3f) -> BSDFEvalResult;
 }
+
+impl Default for BSDFSampleRecord {
+    fn default() -> Self {
+        Self {
+            wi: Vector3f::zeros(),
+            wo: Vector3f::zeros(),
+            pdf: 0.0
+        }
+    }
+}
+
+impl BSDFSampleRecord {
+    pub fn new(_wi: Vector3f, _wo: Vector3f, _pdf: Float) -> Self {
+        Self {
+            wi: _wi,
+            wo: _wo,
+            pdf: _pdf,
+        }
+    }
+}
+
+impl Default for BSDFEvalResult {
+    fn default() -> Self {
+        Self {
+            value: RGBSpectrum::default(),
+            pdf: 0.0,
+        }
+    }
+}
