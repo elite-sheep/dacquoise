@@ -1,7 +1,7 @@
 // Copyright @yucwang 2023
 
 use crate::core::bsdf::{BSDFSampleRecord, BSDFEvalResult, BSDF};
-use crate::core::computation_node::Computation_Node;
+use crate::core::computation_node::ComputationNode;
 use crate::math::constants::{ Float, INV_PI, Vector2f, Vector3f };
 use crate::math::spectrum::RGBSpectrum;
 use crate::math::warp::{ sample_cosine_hemisphere, sample_cosine_hemisphere_pdf };
@@ -10,7 +10,7 @@ pub struct LambertianDiffuseBSDF {
     color: RGBSpectrum
 }
 
-impl Computation_Node for LambertianDiffuseBSDF {
+impl ComputationNode for LambertianDiffuseBSDF {
     fn to_string(&self) -> String {
         String::from("LambertianDiffuseBSDF: {}")
     }

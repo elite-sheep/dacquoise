@@ -2,3 +2,5 @@
 
 pub mod bsdf;
 pub mod computation_node;
+pub mod interaction;
+pub mod shape;
