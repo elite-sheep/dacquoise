@@ -56,3 +56,10 @@ pub fn sample_cosine_hemisphere(u: &Vector2f) -> Vector3f {
 pub fn sample_cosine_hemisphere_pdf(cos_theta: Float) -> Float {
     return cos_theta * INV_PI;
 }
+
+pub fn square_to_triangle(u: &Vector2f) -> Vector3f {
+    let alpha = 1.0 - (1.0 - u.x).sqrt();
+    let beta = u.y * (1.0 - u.x).sqrt();
+
+    Vector3f::new(alpha, beta, 1.0 - alpha - beta)
+}
