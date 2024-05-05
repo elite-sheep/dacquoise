@@ -105,3 +105,31 @@ impl Shape for Triangle {
         length
     }
 }
+
+impl Triangle {
+    fn new(new_p0: Vector3f, new_p1: Vector3f, new_p2: Vector3f) -> Self {
+        Triangle {
+            p0: new_p0, 
+            p1: new_p1,
+            p2: new_p2,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bounding_box1() {
+        let p0 = Vector3f::new(1.0, 1.0, 1.0);
+        let p1 = Vector3f::new(1.5, 4.0, -1.0);
+        let p2 = Vector3f::new(-1.0, 2.0, 2.5);
+
+        let triangle = Triangle::new(p0, p1, p2);
+        let bounding_box = triangle.bounding_box();
+
+        assert_eq!(bounding_box.p_min, Vector3f::new(-1.0, 1.0, -1.0));
+        assert_eq!(bounding_box.p_max, Vector3f::new(1.5, 4.0, 2.5));
+    }
+}
