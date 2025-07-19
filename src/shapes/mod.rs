@@ -1,3 +1,4 @@
 // Copyright @yucwang 2023
 
-mod shape;
+pub mod triangle;
+pub mod triangle_mesh;

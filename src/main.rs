@@ -7,6 +7,7 @@ mod io;
 mod materials;
 mod math;
 mod renderers;
+mod shapes;
 
 use self::math::spectrum::RGBSpectrum;
 use self::renderers::simple::{ SimpleRenderer, Renderer };

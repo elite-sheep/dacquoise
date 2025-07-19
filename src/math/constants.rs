@@ -22,7 +22,7 @@ pub type Matrix4i = na::base::Matrix4<Int>;
 pub type Matrix4f = na::base::Matrix4<Float>;
 
 // Constants.
-pub const EPSILON: Float = 1e-4;
+pub const EPSILON: Float = 1e-8;
 pub const PI: Float = std::f32::consts::PI;
 pub const INV_PI: Float = 1.0 / std::f32::consts::PI;
 pub const SQUARE_2: Float = std::f32::consts::SQRT_2;

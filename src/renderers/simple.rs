@@ -1,6 +1,6 @@
 // Copyright @yucwang 2021
 
-use crate::core::computation_node::Computation_Node;
+use crate::core::computation_node::ComputationNode;
 use crate::io::exr_utils;
 use crate::math::bitmap::Bitmap;
 use crate::math::constants::Vector3f;
@@ -12,7 +12,7 @@ pub struct SimpleRenderer {
     colors: [RGBSpectrum; 4]
 }
 
-impl Computation_Node for SimpleRenderer {
+impl ComputationNode for SimpleRenderer {
     fn to_string(&self) -> String {
         String::from("SimpleRenderer: {}")
     }
