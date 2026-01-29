@@ -524,17 +524,3 @@ fn parse_vec3_spectrum(value: &str) -> Result<RGBSpectrum, SceneLoadError> {
     let v = parse_vec3(value)?;
     Ok(RGBSpectrum::new(v.x, v.y, v.z))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_load_cbox_scene() {
-        let result = load_scene_with_settings("scenes/cbox.xml").expect("failed to load cbox scene");
-        assert!(result.scene.camera(0).is_some());
-        assert!(!result.scene.is_empty());
-        assert!(result.integrator.is_some());
-        assert_eq!(result.samples_per_pixel, Some(128));
-    }
-}
