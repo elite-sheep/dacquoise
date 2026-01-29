@@ -7,3 +7,5 @@ pub mod math;
 pub mod io;
 pub mod sensors;
 pub mod integrators;
+pub mod materials;
+pub mod shapes;

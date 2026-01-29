@@ -20,7 +20,7 @@ impl BSDF for LambertianDiffuseBSDF {
     fn eval(&self, sample_record: BSDFSampleRecord) -> BSDFEvalResult {
         let mut eval_result = BSDFEvalResult::default();
         eval_result.value = self.color * INV_PI;
-        eval_result.pdf = sample_record.pdf;
+        eval_result.pdf = sample_cosine_hemisphere_pdf(sample_record.wi.z.abs());
 
         return eval_result
     }

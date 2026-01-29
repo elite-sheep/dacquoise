@@ -13,6 +13,7 @@ pub struct SurfaceIntersection {
     t: Float,
     le: RGBSpectrum,
     material: Option<Arc<dyn BSDF>>,
+    light_pdf_area: Option<Float>,
 }
 
 pub struct SurfaceSampleRecord {
@@ -27,9 +28,10 @@ impl SurfaceIntersection {
                new_uv: Vector2f,
                new_t: Float,
                new_le: RGBSpectrum,
-               new_material: Option<Arc<dyn BSDF>>) -> Self {
+               new_material: Option<Arc<dyn BSDF>>,
+               new_light_pdf_area: Option<Float>) -> Self {
         Self { p: new_p, geo_normal: new_geo_normal, sh_normal: new_sh_normal,
-               uv: new_uv, t: new_t, le: new_le, material: new_material }
+               uv: new_uv, t: new_t, le: new_le, material: new_material, light_pdf_area: new_light_pdf_area }
     }
 
     pub fn t(&self) -> Float {
@@ -57,6 +59,7 @@ impl SurfaceIntersection {
             t: self.t,
             le: new_le,
             material: self.material.clone(),
+            light_pdf_area: self.light_pdf_area,
         }
     }
 
@@ -73,6 +76,24 @@ impl SurfaceIntersection {
             t: self.t,
             le: self.le,
             material: Some(new_material),
+            light_pdf_area: self.light_pdf_area,
+        }
+    }
+
+    pub fn light_pdf_area(&self) -> Option<Float> {
+        self.light_pdf_area
+    }
+
+    pub fn with_light_pdf_area(&self, new_light_pdf_area: Option<Float>) -> Self {
+        Self {
+            p: self.p.clone(),
+            geo_normal: self.geo_normal.clone(),
+            sh_normal: self.sh_normal.clone(),
+            uv: self.uv.clone(),
+            t: self.t,
+            le: self.le,
+            material: self.material.clone(),
+            light_pdf_area: new_light_pdf_area,
         }
     }
 }
@@ -89,5 +110,9 @@ impl SurfaceSampleRecord {
 
     pub fn pdf(&self) -> Float {
         self.pdf
+    }
+
+    pub fn set_pdf(&mut self, pdf: Float) {
+        self.pdf = pdf;
     }
 }

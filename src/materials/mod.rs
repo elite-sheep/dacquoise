@@ -1,3 +1,3 @@
 // Copyright @yucwang 2023
 
-mod lambertian_diffuse;
+pub mod lambertian_diffuse;

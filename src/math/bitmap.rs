@@ -5,7 +5,7 @@ use super::constants::{ Float, Vector3f };
 use std::ops;
 use std::vec::Vec;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Bitmap {
     data: Vec<Vector3f>,
     height: usize,
