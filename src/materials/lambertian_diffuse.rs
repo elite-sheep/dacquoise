@@ -20,7 +20,7 @@ impl BSDF for LambertianDiffuseBSDF {
     fn eval(&self, sample_record: BSDFSampleRecord) -> BSDFEvalResult {
         let mut eval_result = BSDFEvalResult::default();
         eval_result.value = self.color * INV_PI;
-        eval_result.pdf = sample_cosine_hemisphere_pdf(sample_record.wi.z.abs());
+        eval_result.pdf = sample_cosine_hemisphere_pdf(sample_record.wo.z.abs());
 
         return eval_result
     }
@@ -28,14 +28,14 @@ impl BSDF for LambertianDiffuseBSDF {
     fn sample(&self, 
               u1: Vector2f, 
               _u2: Vector2f,
-              wo: Vector3f) -> BSDFSampleRecord {
+              wi: Vector3f) -> BSDFSampleRecord {
         let mut sampling_record = BSDFSampleRecord::default();
-        sampling_record.wi = sample_cosine_hemisphere(&u1);
-        if wo.z < 0.0 {
-            sampling_record.wi.z *= -1.0;
+        sampling_record.wi = wi;
+        sampling_record.wo = sample_cosine_hemisphere(&u1);
+        if wi.z < 0.0 {
+            sampling_record.wo.z *= -1.0;
         }
-        sampling_record.wo = wo;
-        sampling_record.pdf = sample_cosine_hemisphere_pdf(wo.dot(&sampling_record.wi).abs());
+        sampling_record.pdf = sample_cosine_hemisphere_pdf(sampling_record.wo.z.abs());
 
         return sampling_record
     }
@@ -43,8 +43,8 @@ impl BSDF for LambertianDiffuseBSDF {
     fn sample_and_eval(&self, 
                        u1: Vector2f, 
                        u2: Vector2f,
-                       wo: Vector3f) -> BSDFEvalResult {
-        let sampling_record = self.sample(u1, u2, wo);
+                       wi: Vector3f) -> BSDFEvalResult {
+        let sampling_record = self.sample(u1, u2, wi);
         let eval_result = self.eval(sampling_record);
 
         return eval_result
