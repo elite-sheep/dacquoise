@@ -19,6 +19,12 @@ impl ComputationNode for LambertianDiffuseBSDF {
 impl BSDF for LambertianDiffuseBSDF {
     fn eval(&self, sample_record: BSDFSampleRecord) -> BSDFEvalResult {
         let mut eval_result = BSDFEvalResult::default();
+        if sample_record.wi.z * sample_record.wo.z <= 0.0 {
+            eval_result.value = RGBSpectrum::default();
+            eval_result.pdf = 0.0;
+            return eval_result;
+        }
+
         eval_result.value = self.color * INV_PI;
         eval_result.pdf = sample_cosine_hemisphere_pdf(sample_record.wo.z.abs());
 
