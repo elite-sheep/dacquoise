@@ -2,5 +2,8 @@
 
 pub mod bsdf;
 pub mod computation_node;
+pub mod integrator;
 pub mod interaction;
+pub mod sensor;
+pub mod scene;
 pub mod shape;

@@ -2,7 +2,7 @@
 
 use crate::core::bsdf::{BSDFSampleRecord, BSDFEvalResult, BSDF};
 use crate::core::computation_node::ComputationNode;
-use crate::math::constants::{ Float, INV_PI, Vector2f, Vector3f };
+use crate::math::constants::{ INV_PI, Vector2f, Vector3f };
 use crate::math::spectrum::RGBSpectrum;
 use crate::math::warp::{ sample_cosine_hemisphere, sample_cosine_hemisphere_pdf };
 
@@ -27,7 +27,7 @@ impl BSDF for LambertianDiffuseBSDF {
 
     fn sample(&self, 
               u1: Vector2f, 
-              u2: Vector2f,
+              _u2: Vector2f,
               wo: Vector3f) -> BSDFSampleRecord {
         let mut sampling_record = BSDFSampleRecord::default();
         sampling_record.wi = sample_cosine_hemisphere(&u1);

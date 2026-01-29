@@ -1,13 +1,18 @@
 // Copyright @yucwang 2023
 
+use crate::core::bsdf::BSDF;
 use crate::math::constants::{ Float, Vector2f, Vector3f };
+use crate::math::spectrum::RGBSpectrum;
+use std::sync::Arc;
 
 pub struct SurfaceIntersection {
     p: Vector3f,
     geo_normal: Vector3f,
     sh_normal:  Vector3f,
     uv: Vector2f,
-    t: Float
+    t: Float,
+    le: RGBSpectrum,
+    material: Option<Arc<dyn BSDF>>,
 }
 
 pub struct SurfaceSampleRecord {
@@ -20,9 +25,55 @@ impl SurfaceIntersection {
                new_geo_normal: Vector3f, 
                new_sh_normal: Vector3f, 
                new_uv: Vector2f,
-               new_t: Float) -> Self {
+               new_t: Float,
+               new_le: RGBSpectrum,
+               new_material: Option<Arc<dyn BSDF>>) -> Self {
         Self { p: new_p, geo_normal: new_geo_normal, sh_normal: new_sh_normal,
-               uv: new_uv, t: new_t}
+               uv: new_uv, t: new_t, le: new_le, material: new_material }
+    }
+
+    pub fn t(&self) -> Float {
+        self.t
+    }
+
+    pub fn le(&self) -> RGBSpectrum {
+        self.le
+    }
+
+    pub fn p(&self) -> Vector3f {
+        self.p
+    }
+
+    pub fn geo_normal(&self) -> Vector3f {
+        self.geo_normal
+    }
+
+    pub fn with_le(&self, new_le: RGBSpectrum) -> Self {
+        Self {
+            p: self.p.clone(),
+            geo_normal: self.geo_normal.clone(),
+            sh_normal: self.sh_normal.clone(),
+            uv: self.uv.clone(),
+            t: self.t,
+            le: new_le,
+            material: self.material.clone(),
+        }
+    }
+
+    pub fn material(&self) -> Option<&dyn BSDF> {
+        self.material.as_deref()
+    }
+
+    pub fn with_material(&self, new_material: Arc<dyn BSDF>) -> Self {
+        Self {
+            p: self.p.clone(),
+            geo_normal: self.geo_normal.clone(),
+            sh_normal: self.sh_normal.clone(),
+            uv: self.uv.clone(),
+            t: self.t,
+            le: self.le,
+            material: Some(new_material),
+        }
     }
 }
 
@@ -30,5 +81,13 @@ impl SurfaceSampleRecord {
     pub fn new(new_intersection: SurfaceIntersection,
                new_pdf: Float) -> Self {
         Self { intersection: new_intersection, pdf: new_pdf }
+    }
+
+    pub fn intersection(&self) -> &SurfaceIntersection {
+        &self.intersection
+    }
+
+    pub fn pdf(&self) -> Float {
+        self.pdf
     }
 }

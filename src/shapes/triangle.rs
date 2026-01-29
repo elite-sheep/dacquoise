@@ -1,6 +1,5 @@
 // Copyright @yucwang 2023
 
-use dacquoise::core::interaction;
 
 use crate::core::computation_node::ComputationNode;
 use crate::core::shape::Shape;
@@ -8,6 +7,7 @@ use crate::core::interaction::{ SurfaceIntersection, SurfaceSampleRecord };
 use crate::math::aabb::AABB;
 use crate::math::constants:: { EPSILON, Float, Vector2f, Vector3f };
 use crate::math::ray::Ray3f;
+use crate::math::spectrum::RGBSpectrum;
 use crate::math::warp::square_to_triangle;
 
 use std::option::Option;
@@ -51,7 +51,7 @@ impl Shape for Triangle {
         // TODO: Compute uv, please check PBRT.
         if self.is_in_trangle(&intesection_p) && t >= ray.min_t && t <= ray.max_t {
             let uv = Vector2f::new(0.5, 0.5);
-            let intersection = SurfaceIntersection::new(intesection_p, geo_normal, geo_normal, uv, t);
+            let intersection = SurfaceIntersection::new(intesection_p, geo_normal, geo_normal, uv, t, RGBSpectrum::default(), None);
             return Some(intersection);
         } else {
             return None;
@@ -87,7 +87,7 @@ impl Shape for Triangle {
         let edge1 = self.p2 - self.p0;
         let n = edge0.cross(&edge1).normalize();
 
-        let interaction = SurfaceIntersection::new(p, n, n, uv.xy(), 0.0);
+        let interaction = SurfaceIntersection::new(p, n, n, uv.xy(), 0.0, RGBSpectrum::default(), None);
 
         SurfaceSampleRecord::new(interaction, 1.0 / self.surface_area())
     }

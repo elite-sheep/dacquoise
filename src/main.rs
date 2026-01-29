@@ -1,5 +1,7 @@
 // Copyright 2020 TwoCookingMice
 
+#![allow(dead_code)]
+
 pub extern crate nalgebra as na;
 
 mod core;
