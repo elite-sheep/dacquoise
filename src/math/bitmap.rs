@@ -5,7 +5,7 @@ use super::constants::{ Float, Vector3f };
 use std::ops;
 use std::vec::Vec;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Bitmap {
     data: Vec<Vector3f>,
     height: usize,
@@ -63,9 +63,9 @@ impl Bitmap {
 }
 
 /* Test for Bitmap */
+#[cfg(test)]
 mod tests {
-    use super::{ Bitmap };
-    use super::{ Vector3f };
+    use super::{Bitmap, Vector3f};
 
     #[test]
     fn test_bitmap_basic_functions() {
@@ -78,6 +78,3 @@ mod tests {
         assert_ne!((bitmap[(2, 6)][0] - 0.0).abs(), 0.000001);
     }
 }
-
-
-

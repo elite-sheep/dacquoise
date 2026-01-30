@@ -1,15 +1,16 @@
 // Copyright @yucwang 2021
 
 use crate::core::computation_node::ComputationNode;
-use crate::io::exr_utils;
+use crate::core::integrator::Integrator;
+use crate::core::scene::Scene;
 use crate::math::bitmap::Bitmap;
-use crate::math::constants::Vector3f;
-use crate::math::spectrum::RGBSpectrum;
 
 pub use super::renderer::Renderer;
 
 pub struct SimpleRenderer {
-    colors: [RGBSpectrum; 4]
+    integrator: Box<dyn Integrator>,
+    camera_id: usize,
+    seed: u64,
 }
 
 impl ComputationNode for SimpleRenderer {
@@ -19,34 +20,25 @@ impl ComputationNode for SimpleRenderer {
 }
 
 impl Renderer for SimpleRenderer {
-    fn render(&self) {
-        let mut tmp_bitmap = Bitmap::new(256, 256);
-        for i in 0..256 {
-            for j in 0..256 {
-                let mut color_index = 0;
-                if i >= 128 {
-                    color_index += 1;
-                }
-                if j >= 128 {
-                    color_index += 2;
-                }
-                tmp_bitmap[(i, j)] = Vector3f::new(self.colors[color_index][0], 
-                                                   self.colors[color_index][1],
-                                                   self.colors[color_index][2]);
-            }
-        }
+    fn render(&self, scene: &mut Scene) -> Bitmap {
+        let mut sensor = match scene.take_sensor(self.camera_id) {
+            Some(sensor) => sensor,
+            None => return Bitmap::new(0, 0),
+        };
 
-        exr_utils::write_exr_to_file(&tmp_bitmap.raw_copy(), 
-                                     256 as usize, 
-                                     256 as usize, 
-                                     "./test.exr");
+        self.integrator.render_forward(scene, sensor.as_mut(), self.seed);
+        let bitmap = sensor.bitmap().clone();
+        scene.insert_sensor(self.camera_id, sensor);
+        bitmap
     }
 }
 
 impl SimpleRenderer {
-    pub fn new(new_colors: [RGBSpectrum; 4]) -> Self {
+    pub fn new(integrator: Box<dyn Integrator>, camera_id: usize, seed: u64) -> Self {
         Self {
-            colors: new_colors,
+            integrator,
+            camera_id,
+            seed,
         }
     }
 }

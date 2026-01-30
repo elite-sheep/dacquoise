@@ -1,6 +1,5 @@
 // Copyright @yucwang 2023
 
-use dacquoise::core::interaction;
 
 use crate::core::computation_node::ComputationNode;
 use crate::core::shape::Shape;
@@ -8,6 +7,7 @@ use crate::core::interaction::{ SurfaceIntersection, SurfaceSampleRecord };
 use crate::math::aabb::AABB;
 use crate::math::constants:: { EPSILON, Float, Vector2f, Vector3f };
 use crate::math::ray::Ray3f;
+use crate::math::spectrum::RGBSpectrum;
 use crate::math::warp::square_to_triangle;
 
 use std::option::Option;
@@ -51,7 +51,7 @@ impl Shape for Triangle {
         // TODO: Compute uv, please check PBRT.
         if self.is_in_trangle(&intesection_p) && t >= ray.min_t && t <= ray.max_t {
             let uv = Vector2f::new(0.5, 0.5);
-            let intersection = SurfaceIntersection::new(intesection_p, geo_normal, geo_normal, uv, t);
+            let intersection = SurfaceIntersection::new(intesection_p, geo_normal, geo_normal, uv, t, RGBSpectrum::default(), None, None);
             return Some(intersection);
         } else {
             return None;
@@ -72,9 +72,13 @@ impl Shape for Triangle {
         let plane_d = geo_normal.dot(&self.p0);
         let t = (plane_d - geo_normal.dot(&ray.origin())) / n_dot_dir;
 
+        if t < ray.min_t || t > ray.max_t {
+            return false;
+        }
+
         let intersection_p = ray.origin() + t * ray.dir();
 
-        return self.is_in_trangle(&intersection_p) & (t >= ray.min_t) & (t <= ray.max_t);
+        return self.is_in_trangle(&intersection_p);
     }
 
     fn sample(&self, u: &Vector2f) -> SurfaceSampleRecord {
@@ -87,7 +91,7 @@ impl Shape for Triangle {
         let edge1 = self.p2 - self.p0;
         let n = edge0.cross(&edge1).normalize();
 
-        let interaction = SurfaceIntersection::new(p, n, n, uv.xy(), 0.0);
+        let interaction = SurfaceIntersection::new(p, n, n, uv.xy(), 0.0, RGBSpectrum::default(), None, None);
 
         SurfaceSampleRecord::new(interaction, 1.0 / self.surface_area())
     }
@@ -99,7 +103,7 @@ impl Shape for Triangle {
 }
 
 impl Triangle {
-    fn new(new_p0: Vector3f, new_p1: Vector3f, new_p2: Vector3f) -> Self {
+    pub fn new(new_p0: Vector3f, new_p1: Vector3f, new_p2: Vector3f) -> Self {
         Triangle {
             p0: new_p0, 
             p1: new_p1,
@@ -117,7 +121,19 @@ impl Triangle {
         let n1 = (self.p2 - self.p1).cross(&(p - self.p1));
         let n2 = (self.p0 - self.p2).cross(&(p - self.p2));
 
-        return (n0.dot(&geo_normal) >= 0.0) & (n1.dot(&geo_normal) >= 0.0) & (n2.dot(&geo_normal) >= 0.0);
+        return (n0.dot(&geo_normal) >= 0.0) && (n1.dot(&geo_normal) >= 0.0) && (n2.dot(&geo_normal) >= 0.0);
+    }
+
+    pub fn geometric_normal(&self) -> Vector3f {
+        let edge0 = self.p1 - self.p0;
+        let edge1 = self.p2 - self.p0;
+        edge0.cross(&edge1).normalize()
+    }
+
+    pub fn apply_transform(&mut self, scale: &Vector3f, translate: &Vector3f) {
+        self.p0 = self.p0.component_mul(scale) + translate;
+        self.p1 = self.p1.component_mul(scale) + translate;
+        self.p2 = self.p2.component_mul(scale) + translate;
     }
 }
 
