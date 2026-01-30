@@ -2,12 +2,14 @@
 
 use crate::core::bsdf::{BSDFSampleRecord, BSDFEvalResult, BSDF};
 use crate::core::computation_node::ComputationNode;
+use crate::core::texture::Texture;
 use crate::math::constants::{ INV_PI, Vector2f, Vector3f };
 use crate::math::spectrum::RGBSpectrum;
 use crate::math::warp::{ sample_cosine_hemisphere, sample_cosine_hemisphere_pdf };
+use std::sync::Arc;
 
 pub struct LambertianDiffuseBSDF {
-    color: RGBSpectrum
+    texture: Arc<dyn Texture>,
 }
 
 impl ComputationNode for LambertianDiffuseBSDF {
@@ -25,7 +27,8 @@ impl BSDF for LambertianDiffuseBSDF {
             return eval_result;
         }
 
-        eval_result.value = self.color * INV_PI;
+        let color = self.texture.eval(sample_record.uv);
+        eval_result.value = color * INV_PI;
         eval_result.pdf = sample_cosine_hemisphere_pdf(sample_record.wo.z.abs());
 
         return eval_result
@@ -58,9 +61,9 @@ impl BSDF for LambertianDiffuseBSDF {
 }
 
 impl LambertianDiffuseBSDF {
-    pub fn new(rgb: RGBSpectrum) -> Self {
+    pub fn new(texture: Arc<dyn Texture>) -> Self {
         Self {
-            color: rgb,
+            texture,
         }
     }
 }

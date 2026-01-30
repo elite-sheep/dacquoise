@@ -12,6 +12,7 @@ mod math;
 mod renderers;
 mod sensors;
 mod shapes;
+mod textures;
 
 use self::core::scene_loader::load_scene_with_settings;
 use self::integrators::path::PathIntegrator;

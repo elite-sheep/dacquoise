@@ -13,6 +13,7 @@ use crate::sensors::perspective::PerspectiveCamera;
 use crate::materials::lambertian_diffuse::LambertianDiffuseBSDF;
 use crate::math::spectrum::RGBSpectrum;
 use crate::shapes::triangle_mesh::TriangleMesh;
+use crate::textures::constant::ConstantTexture;
 use crate::core::scene::SceneObject;
 use crate::core::bsdf::BSDF;
 use crate::core::integrator::Integrator;
@@ -86,6 +87,10 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut current_shape_id: Option<String> = None;
     let mut current_shape_translate = Vector3f::new(0.0, 0.0, 0.0);
     let mut current_shape_scale = Vector3f::new(1.0, 1.0, 1.0);
+
+    let mut in_texture = false;
+    let mut current_texture_name: Option<String> = None;
+    let mut _current_texture_type: Option<String> = None;
 
     let mut scene = Scene::new();
     scene.set_base_dir(base_dir.to_path_buf());
@@ -293,10 +298,32 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             in_bsdf = false;
                             current_bsdf_id = None;
                             current_bsdf_reflectance = None;
+                            in_texture = false;
+                            current_texture_name = None;
+                            _current_texture_type = None;
                         } else {
                             in_bsdf = true;
                             current_bsdf_id = bsdf_id;
                             current_bsdf_reflectance = None;
+                            in_texture = false;
+                            current_texture_name = None;
+                            _current_texture_type = None;
+                        }
+                    }
+                    b"texture" => {
+                        if in_bsdf {
+                            let mut tex_type: Option<String> = None;
+                            let mut tex_name: Option<String> = None;
+                            for attr in e.attributes().flatten() {
+                                match attr.key.as_ref() {
+                                    b"type" => tex_type = Some(resolve_value(&attr.unescape_value().unwrap_or_default(), &defaults)),
+                                    b"name" => tex_name = Some(attr.unescape_value().unwrap_or_default().to_string()),
+                                    _ => {}
+                                }
+                            }
+                            in_texture = true;
+                            _current_texture_type = tex_type;
+                            current_texture_name = tex_name;
                         }
                     }
                     b"rgb" => {
@@ -310,7 +337,12 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             }
                         }
                         if let (Some(name_attr), Some(value_attr)) = (name_attr, value_attr) {
-                            if in_bsdf && name_attr == "reflectance" {
+                            let reflectance_ok = if in_texture {
+                                current_texture_name.as_deref() == Some("reflectance")
+                            } else {
+                                true
+                            };
+                            if in_bsdf && name_attr == "reflectance" && reflectance_ok {
                                 current_bsdf_reflectance = Some(parse_vec3_spectrum(&value_attr)?);
                             }
                             if in_emitter && name_attr == "radiance" {
@@ -411,15 +443,24 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         in_transform = false;
                         in_shape_transform = false;
                     }
+                    b"texture" => {
+                        in_texture = false;
+                        current_texture_name = None;
+                        _current_texture_type = None;
+                    }
                     b"bsdf" => {
                         if in_bsdf {
                             if let Some(id) = current_bsdf_id.take() {
                                 let refl = current_bsdf_reflectance.unwrap_or(RGBSpectrum::new(0.5, 0.5, 0.5));
-                                let bsdf = Arc::new(LambertianDiffuseBSDF::new(refl)) as Arc<dyn BSDF>;
+                                let texture = Arc::new(ConstantTexture::new(refl)) as Arc<dyn crate::core::texture::Texture>;
+                                let bsdf = Arc::new(LambertianDiffuseBSDF::new(texture)) as Arc<dyn BSDF>;
                                 bsdfs.insert(id, bsdf);
                             }
                         }
                         in_bsdf = false;
+                        in_texture = false;
+                        current_texture_name = None;
+                        _current_texture_type = None;
                     }
                     b"emitter" => {
                         in_emitter = false;

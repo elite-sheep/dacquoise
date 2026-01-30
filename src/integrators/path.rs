@@ -4,7 +4,9 @@ use crate::core::integrator::Integrator;
 use crate::core::scene::Scene;
 use crate::core::sensor::Sensor;
 use crate::core::tangent_frame::{build_tangent_frame, local_to_world, world_to_local};
+use crate::core::bsdf::BSDFSampleRecord;
 use crate::math::constants::{Float, Vector2f, Vector3f};
+use crate::math::ray::Ray3f;
 use crate::math::spectrum::Spectrum;
 
 struct LcgRng {
@@ -64,7 +66,7 @@ impl Integrator for PathIntegrator {
 }
 
 impl PathIntegrator {
-    fn trace_path(&self, scene: &Scene, mut ray: crate::math::ray::Ray3f, rng: &mut LcgRng) -> Vector3f {
+    fn trace_path(&self, scene: &Scene, mut ray: Ray3f, rng: &mut LcgRng) -> Vector3f {
         let mut radiance = Vector3f::zeros();
         let mut throughput = Vector3f::new(1.0, 1.0, 1.0);
         let mut prev_bsdf_pdf: Float = 0.0;
@@ -126,7 +128,7 @@ impl PathIntegrator {
                             let cos_light = light_intersection.geo_normal().dot(&(-wo_world)).max(0.0);
 
                             if cos_light > 0.0 {
-                                let shadow_ray = crate::math::ray::Ray3f::new(
+                                let shadow_ray = Ray3f::new(
                                     p + n * 1e-3,
                                     wo_world,
                                     Some(1e-3),
@@ -145,10 +147,11 @@ impl PathIntegrator {
 
                                 if !is_occluded {
                                     let wo_local = world_to_local(&wo_world, &tangent, &bitangent, &n);
-                                    let mut eval_record = crate::core::bsdf::BSDFSampleRecord::default();
+                                    let mut eval_record = BSDFSampleRecord::default();
                                     eval_record.wi = wi_local;
                                     eval_record.wo = wo_local;
                                     eval_record.pdf = 0.0;
+                                    eval_record.uv = intersection.uv();
                                     let eval = material.eval(eval_record);
                                     let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
                                     let cos_theta = wo_local.z.abs();
@@ -172,7 +175,8 @@ impl PathIntegrator {
 
             let u1 = Vector2f::new(rng.next_f32(), rng.next_f32());
             let u2 = Vector2f::new(rng.next_f32(), rng.next_f32());
-            let sample = material.sample(u1, u2, wi_local);
+            let mut sample = material.sample(u1, u2, wi_local);
+            sample.uv = intersection.uv();
             let wo_local = sample.wo;
             let pdf = sample.pdf;
 
@@ -202,7 +206,7 @@ impl PathIntegrator {
             prev_bsdf_pdf = pdf;
             let wo_world = local_to_world(&wo_local, &tangent, &bitangent, &n);
             let origin = intersection.p();
-            ray = crate::math::ray::Ray3f::new(origin, wo_world, Some(1e-4), None);
+            ray = Ray3f::new(origin, wo_world, Some(1e-4), None);
         }
 
         radiance

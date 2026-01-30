@@ -48,9 +48,9 @@ impl Shape for Triangle {
 
         let intesection_p = ray.origin() + t * ray.dir();
 
-        // TODO: Compute uv, please check PBRT.
         if self.is_in_trangle(&intesection_p) && t >= ray.min_t && t <= ray.max_t {
-            let uv = Vector2f::new(0.5, 0.5);
+            let bary = self.barycentric(&intesection_p);
+            let uv = Vector2f::new(bary.y, bary.z);
             let intersection = SurfaceIntersection::new(intesection_p, geo_normal, geo_normal, uv, t, RGBSpectrum::default(), None, None);
             return Some(intersection);
         } else {
@@ -128,6 +128,31 @@ impl Triangle {
         let edge0 = self.p1 - self.p0;
         let edge1 = self.p2 - self.p0;
         edge0.cross(&edge1).normalize()
+    }
+
+    pub fn vertices(&self) -> (Vector3f, Vector3f, Vector3f) {
+        (self.p0, self.p1, self.p2)
+    }
+
+    pub fn barycentric(&self, p: &Vector3f) -> Vector3f {
+        let v0 = self.p1 - self.p0;
+        let v1 = self.p2 - self.p0;
+        let v2 = *p - self.p0;
+
+        let d00 = v0.dot(&v0);
+        let d01 = v0.dot(&v1);
+        let d11 = v1.dot(&v1);
+        let d20 = v2.dot(&v0);
+        let d21 = v2.dot(&v1);
+        let denom = d00 * d11 - d01 * d01;
+        if denom.abs() < EPSILON {
+            return Vector3f::new(1.0, 0.0, 0.0);
+        }
+
+        let v = (d11 * d20 - d01 * d21) / denom;
+        let w = (d00 * d21 - d01 * d20) / denom;
+        let u = 1.0 - v - w;
+        Vector3f::new(u, v, w)
     }
 
     pub fn apply_transform(&mut self, scale: &Vector3f, translate: &Vector3f) {
