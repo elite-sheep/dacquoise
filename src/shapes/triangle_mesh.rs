@@ -4,6 +4,7 @@ use super::triangle::Triangle;
 
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::shape::Shape;
+use crate::core::bvh::BVH;
 use crate::io::obj_utils;
 use crate::io::obj_utils::ObjLoadError;
 use crate::math::aabb::AABB;
@@ -21,6 +22,7 @@ pub struct TriangleMesh {
     tri_areas: Vec<Float>,
     total_area: Float,
     tri_normals: Vec<Vector3f>,
+    bvh: Option<BVH>,
 }
 
 impl TriangleMesh {
@@ -71,7 +73,18 @@ impl TriangleMesh {
             }
         }
 
-        Ok(Self { vertices, normals, uvs, triangles, tri_areas, total_area, tri_normals })
+        let mut mesh = Self {
+            vertices,
+            normals,
+            uvs,
+            triangles,
+            tri_areas,
+            total_area,
+            tri_normals,
+            bvh: None,
+        };
+        mesh.build_bvh();
+        Ok(mesh)
     }
 
     pub fn apply_transform(&mut self, scale: &Vector3f, translate: &Vector3f) {
@@ -93,6 +106,25 @@ impl TriangleMesh {
             self.tri_areas.push(area);
             self.total_area += area;
         }
+
+        self.build_bvh();
+    }
+
+    fn build_bvh(&mut self) {
+        if self.triangles.is_empty() {
+            self.bvh = None;
+            return;
+        }
+
+        let mut prim_bounds = Vec::with_capacity(self.triangles.len());
+        let mut prim_centroids = Vec::with_capacity(self.triangles.len());
+        for tri in &self.triangles {
+            let bounds = tri.bounding_box();
+            prim_centroids.push(bounds.center());
+            prim_bounds.push(bounds);
+        }
+
+        self.bvh = Some(BVH::new(prim_bounds, prim_centroids));
     }
 }
 
@@ -108,34 +140,67 @@ impl Shape for TriangleMesh {
     fn ray_intersection(&self, ray: &Ray3f) -> Option<SurfaceIntersection> {
         let mut closest_hit: Option<SurfaceIntersection> = None;
         let mut closest_t = std::f32::MAX;
-        for (idx, tri) in self.triangles.iter().enumerate() {
-            if let Some(hit) = tri.ray_intersection(ray) {
-                let hit_t = hit.t();
-                if hit_t < closest_t {
-                    let geo_n = hit.geo_normal();
-                    let mut sh_n = self.tri_normals.get(idx).cloned().unwrap_or(geo_n);
-                    if sh_n.dot(&geo_n) < 0.0 {
-                        sh_n = -sh_n;
+
+        if let Some(bvh) = &self.bvh {
+            if let Some((idx, hit)) = bvh.ray_intersection(ray, |prim_idx, ray| {
+                self.triangles[prim_idx].ray_intersection(ray).map(|h| {
+                    let t = h.t();
+                    (h, t)
+                })
+            }) {
+                let geo_n = hit.geo_normal();
+                let mut sh_n = self.tri_normals.get(idx).cloned().unwrap_or(geo_n);
+                if sh_n.dot(&geo_n) < 0.0 {
+                    sh_n = -sh_n;
+                }
+                return Some(SurfaceIntersection::new(
+                    hit.p(),
+                    geo_n,
+                    sh_n,
+                    Vector2f::new(0.0, 0.0),
+                    hit.t(),
+                    RGBSpectrum::default(),
+                    None,
+                    None,
+                ));
+            }
+        } else {
+            for (idx, tri) in self.triangles.iter().enumerate() {
+                if let Some(hit) = tri.ray_intersection(ray) {
+                    let hit_t = hit.t();
+                    if hit_t < closest_t {
+                        let geo_n = hit.geo_normal();
+                        let mut sh_n = self.tri_normals.get(idx).cloned().unwrap_or(geo_n);
+                        if sh_n.dot(&geo_n) < 0.0 {
+                            sh_n = -sh_n;
+                        }
+                        let hit = SurfaceIntersection::new(
+                            hit.p(),
+                            geo_n,
+                            sh_n,
+                            Vector2f::new(0.0, 0.0),
+                            hit_t,
+                            RGBSpectrum::default(),
+                            None,
+                            None,
+                        );
+                        closest_t = hit_t;
+                        closest_hit = Some(hit);
                     }
-                    let hit = SurfaceIntersection::new(
-                        hit.p(),
-                        geo_n,
-                        sh_n,
-                        Vector2f::new(0.0, 0.0),
-                        hit_t,
-                        RGBSpectrum::default(),
-                        None,
-                        None,
-                    );
-                    closest_t = hit_t;
-                    closest_hit = Some(hit);
                 }
             }
         }
+
         closest_hit
     }
 
     fn ray_intersection_t(&self, ray: &Ray3f) -> bool {
+        if let Some(bvh) = &self.bvh {
+            return bvh.ray_intersection_t(ray, |prim_idx, ray| {
+                self.triangles[prim_idx].ray_intersection_t(ray)
+            });
+        }
+
         for tri in &self.triangles {
             if tri.ray_intersection_t(ray) {
                 return true;

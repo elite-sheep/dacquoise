@@ -1,6 +1,6 @@
 // Copyright 2020 @TwoCookingMice
 
-use super::constants::{ Int, Float, Vector2f, Vector3f, 
+use super::constants::{ Int, Float, Vector3f, 
                        FLOAT_MIN, FLOAT_MAX };
 use super::ray::{ Ray3f };
 
@@ -54,35 +54,39 @@ impl AABB {
     }
 
     pub fn ray_intersect(&self, ray: &Ray3f) -> bool {
-        let mut result = true;
-
-        if self.is_valid() {
-            let o = ray.origin();
-            let d = ray.dir();
-            let mut t = Vector2f::new(FLOAT_MIN, FLOAT_MAX);
-            for idx in 0..3 {
-                let t1 = (self.p_min[idx] - o[idx]) / d[idx];
-                let t2 = (self.p_max[idx] - o[idx]) / d[idx];
-    
-                if t1 < 0.0 && t2 < 0.0 {
-                    result = false;
-                    break;
-                }
-    
-                t[0] = t[0].max(t1);
-                t[1] = t[1].min(t2);
-            }
-    
-            if result && t[0] <= t[1] {
-                result &= ray.test_segment(t[0]) | ray.test_segment(t[1]);
-            } else {
-                result = false;
-            }
-        } else {
-            result = false;
+        if !self.is_valid() {
+            return false;
         }
 
-        result
+        let o = ray.origin();
+        let d = ray.dir();
+        let mut t_min = ray.min_t;
+        let mut t_max = ray.max_t;
+
+        for idx in 0..3 {
+            let dir = d[idx];
+            if dir.abs() < 1e-8 {
+                if o[idx] < self.p_min[idx] || o[idx] > self.p_max[idx] {
+                    return false;
+                }
+                continue;
+            }
+
+            let inv = 1.0 / dir;
+            let mut t0 = (self.p_min[idx] - o[idx]) * inv;
+            let mut t1 = (self.p_max[idx] - o[idx]) * inv;
+            if t0 > t1 {
+                std::mem::swap(&mut t0, &mut t1);
+            }
+
+            t_min = t_min.max(t0);
+            t_max = t_max.min(t1);
+            if t_max < t_min {
+                return false;
+            }
+        }
+
+        true
     }
 
     pub fn surface_area(&self) -> Float {
@@ -177,7 +181,7 @@ mod tests {
 
         let r1 = Ray3f::new(o1, d1, Some(0.0), Some(1.0));
         let r2 = Ray3f::new(o1, d1, Some(0.0), Some(10.0));
-        assert_eq!(bbox.ray_intersect(&r1), false);
+        assert_eq!(bbox.ray_intersect(&r1), true);
         assert_eq!(bbox.ray_intersect(&r2), true);
 
         let o2 = Vector3f::new(-1.1, 0.0, 0.0);

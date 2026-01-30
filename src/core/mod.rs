@@ -1,6 +1,7 @@
 // Copyright @yucwang 2021
 
 pub mod bsdf;
+pub mod bvh;
 pub mod computation_node;
 pub mod integrator;
 pub mod interaction;
