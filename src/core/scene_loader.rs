@@ -478,6 +478,8 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
         buf.clear();
     }
 
+    scene.build_bvh();
+
     let integrator = if let Some(depth) = max_depth {
         Some(Box::new(PathIntegrator::new(depth, spp.unwrap_or(1))) as Box<dyn Integrator>)
     } else {

@@ -1,6 +1,7 @@
 // Copyright @yucwang 2026
 
 use crate::core::bsdf::BSDF;
+use crate::core::bvh::BVH;
 use crate::core::interaction::SurfaceIntersection;
 use crate::core::sensor::Sensor;
 use crate::core::shape::Shape;
@@ -35,23 +36,30 @@ pub struct Scene {
     objects: Vec<SceneObject>,
     sensors: Vec<Box<dyn Sensor>>,
     base_dir: std::path::PathBuf,
+    bvh: Option<BVH>,
 }
 
 impl Scene {
     pub fn new() -> Self {
-        Self { objects: Vec::new(), sensors: Vec::new(), base_dir: std::path::PathBuf::new() }
+        Self {
+            objects: Vec::new(),
+            sensors: Vec::new(),
+            base_dir: std::path::PathBuf::new(),
+            bvh: None,
+        }
     }
 
     pub fn with_objects(objects: Vec<SceneObject>) -> Self {
-        Self { objects, sensors: Vec::new(), base_dir: std::path::PathBuf::new() }
+        Self { objects, sensors: Vec::new(), base_dir: std::path::PathBuf::new(), bvh: None }
     }
 
     pub fn with_objects_and_sensors(objects: Vec<SceneObject>, sensors: Vec<Box<dyn Sensor>>) -> Self {
-        Self { objects, sensors, base_dir: std::path::PathBuf::new() }
+        Self { objects, sensors, base_dir: std::path::PathBuf::new(), bvh: None }
     }
 
     pub fn add_object(&mut self, object: SceneObject) {
         self.objects.push(object);
+        self.bvh = None;
     }
 
     pub fn objects(&self) -> &Vec<SceneObject> {
@@ -59,6 +67,7 @@ impl Scene {
     }
 
     pub fn objects_mut(&mut self) -> &mut Vec<SceneObject> {
+        self.bvh = None;
         &mut self.objects
     }
 
@@ -117,24 +126,60 @@ impl Scene {
         self.objects.is_empty()
     }
 
+    pub fn build_bvh(&mut self) {
+        if self.objects.is_empty() {
+            self.bvh = None;
+            return;
+        }
+
+        let mut prim_bounds = Vec::with_capacity(self.objects.len());
+        let mut prim_centroids = Vec::with_capacity(self.objects.len());
+        for obj in &self.objects {
+            let bounds = obj.shape.bounding_box();
+            prim_centroids.push(bounds.center());
+            prim_bounds.push(bounds);
+        }
+
+        self.bvh = Some(BVH::new(prim_bounds, prim_centroids));
+    }
+
     pub fn ray_intersection(&self, ray: &Ray3f) -> Option<SurfaceIntersection> {
         let mut closest_hit: Option<SurfaceIntersection> = None;
         let mut closest_t = std::f32::MAX;
 
         let emitter_count = self.objects.iter().filter(|o| !o.emission.is_black()).count() as Float;
-        for object in &self.objects {
-            if let Some(hit) = object.shape.ray_intersection(ray) {
-                let hit_t = hit.t();
-                if hit_t < closest_t {
-                    closest_t = hit_t;
-                    let mut hit = hit.with_le(object.emission).with_material(object.material.clone());
-                    if !object.emission.is_black() && emitter_count > 0.0 {
-                        let area = object.shape.surface_area().max(1e-6);
-                        let pdf_area = 1.0 / area;
-                        let pdf_select = 1.0 / emitter_count;
-                        hit = hit.with_light_pdf_area(Some(pdf_area * pdf_select));
+        if let Some(bvh) = &self.bvh {
+            if let Some((idx, hit)) = bvh.ray_intersection(ray, |prim_idx, ray| {
+                self.objects[prim_idx].shape.ray_intersection(ray).map(|h| {
+                    let t = h.t();
+                    (h, t)
+                })
+            }) {
+                let object = &self.objects[idx];
+                let mut hit = hit.with_le(object.emission).with_material(object.material.clone());
+                if !object.emission.is_black() && emitter_count > 0.0 {
+                    let area = object.shape.surface_area().max(1e-6);
+                    let pdf_area = 1.0 / area;
+                    let pdf_select = 1.0 / emitter_count;
+                    hit = hit.with_light_pdf_area(Some(pdf_area * pdf_select));
+                }
+                return Some(hit);
+            }
+        } else {
+            for object in &self.objects {
+                if let Some(hit) = object.shape.ray_intersection(ray) {
+                    let hit_t = hit.t();
+                    if hit_t < closest_t {
+                        closest_t = hit_t;
+                        let mut hit = hit.with_le(object.emission).with_material(object.material.clone());
+                        if !object.emission.is_black() && emitter_count > 0.0 {
+                            let area = object.shape.surface_area().max(1e-6);
+                            let pdf_area = 1.0 / area;
+                            let pdf_select = 1.0 / emitter_count;
+                            hit = hit.with_light_pdf_area(Some(pdf_area * pdf_select));
+                        }
+                        closest_hit = Some(hit);
                     }
-                    closest_hit = Some(hit);
                 }
             }
         }
@@ -143,6 +188,12 @@ impl Scene {
     }
 
     pub fn ray_intersection_t(&self, ray: &Ray3f) -> bool {
+        if let Some(bvh) = &self.bvh {
+            return bvh.ray_intersection_t(ray, |prim_idx, ray| {
+                self.objects[prim_idx].shape.ray_intersection_t(ray)
+            });
+        }
+
         for object in &self.objects {
             if object.shape.ray_intersection_t(ray) {
                 return true;
@@ -157,20 +208,39 @@ impl Scene {
         let mut closest_t = std::f32::MAX;
 
         let emitter_count = self.objects.iter().filter(|o| !o.emission.is_black()).count() as Float;
-        for object in &self.objects {
-            if let Some(hit) = object.shape.ray_intersection(ray) {
-                let hit_t = hit.t();
-                if hit_t < closest_t {
-                    closest_t = hit_t;
-                    let mut hit = hit.with_le(object.emission).with_material(object.material.clone());
-                    if !object.emission.is_black() && emitter_count > 0.0 {
-                        let area = object.shape.surface_area().max(1e-6);
-                        let pdf_area = 1.0 / area;
-                        let pdf_select = 1.0 / emitter_count;
-                        hit = hit.with_light_pdf_area(Some(pdf_area * pdf_select));
+        if let Some(bvh) = &self.bvh {
+            if let Some((idx, hit)) = bvh.ray_intersection(ray, |prim_idx, ray| {
+                self.objects[prim_idx].shape.ray_intersection(ray).map(|h| {
+                    let t = h.t();
+                    (h, t)
+                })
+            }) {
+                let object = &self.objects[idx];
+                let mut hit = hit.with_le(object.emission).with_material(object.material.clone());
+                if !object.emission.is_black() && emitter_count > 0.0 {
+                    let area = object.shape.surface_area().max(1e-6);
+                    let pdf_area = 1.0 / area;
+                    let pdf_select = 1.0 / emitter_count;
+                    hit = hit.with_light_pdf_area(Some(pdf_area * pdf_select));
+                }
+                return Some((hit, object.name.as_deref()));
+            }
+        } else {
+            for object in &self.objects {
+                if let Some(hit) = object.shape.ray_intersection(ray) {
+                    let hit_t = hit.t();
+                    if hit_t < closest_t {
+                        closest_t = hit_t;
+                        let mut hit = hit.with_le(object.emission).with_material(object.material.clone());
+                        if !object.emission.is_black() && emitter_count > 0.0 {
+                            let area = object.shape.surface_area().max(1e-6);
+                            let pdf_area = 1.0 / area;
+                            let pdf_select = 1.0 / emitter_count;
+                            hit = hit.with_light_pdf_area(Some(pdf_area * pdf_select));
+                        }
+                        closest_hit = Some(hit);
+                        closest_name = object.name.as_deref();
                     }
-                    closest_hit = Some(hit);
-                    closest_name = object.name.as_deref();
                 }
             }
         }
