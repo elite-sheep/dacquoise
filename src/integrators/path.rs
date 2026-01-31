@@ -7,7 +7,7 @@ use crate::core::tangent_frame::{build_tangent_frame, local_to_world, world_to_l
 use crate::core::bsdf::BSDFSampleRecord;
 use crate::math::constants::{Float, Vector2f, Vector3f};
 use crate::math::ray::Ray3f;
-use crate::math::spectrum::Spectrum;
+use crate::math::spectrum::{RGBSpectrum, Spectrum};
 
 struct LcgRng {
     state: u64,
@@ -40,33 +40,21 @@ impl PathIntegrator {
 }
 
 impl Integrator for PathIntegrator {
-    fn render_forward(&self, scene: &Scene, sensor: &mut dyn Sensor, seed: u64) {
+    fn trace_ray_forward(&self, scene: &Scene, sensor: &dyn Sensor, pixel: Vector2f, seed: u64) -> RGBSpectrum {
         let (width, height) = {
             let bmp = sensor.bitmap();
             (bmp.width(), bmp.height())
         };
-
-        let spp = if self.samples_per_pixel == 0 { 1 } else { self.samples_per_pixel };
-        let inv_spp = 1.0 / (spp as Float);
-        let mut rng = LcgRng::new(seed);
-
-        for y in 0..height {
-            for x in 0..width {
-                let mut color = Vector3f::zeros();
-                for _ in 0..spp {
-                    let u = (x as Float + rng.next_f32()) / (width as Float);
-                    let v = (y as Float + rng.next_f32()) / (height as Float);
-                    let ray = sensor.sample_ray(&Vector2f::new(u, v));
-                    color += self.trace_path(scene, ray, &mut rng);
-                }
-                sensor.bitmap_mut()[(x, y)] = color * inv_spp;
-            }
+        if width == 0 || height == 0 {
+            return RGBSpectrum::default();
         }
-    }
-}
 
-impl PathIntegrator {
-    fn trace_path(&self, scene: &Scene, mut ray: Ray3f, rng: &mut LcgRng) -> Vector3f {
+        let px = pixel.x;
+        let py = pixel.y;
+        let mut rng = LcgRng::new(seed);
+        let u = (px + rng.next_f32()) / (width as Float);
+        let v = (py + rng.next_f32()) / (height as Float);
+        let mut ray = sensor.sample_ray(&Vector2f::new(u, v));
         let mut radiance = Vector3f::zeros();
         let mut throughput = Vector3f::new(1.0, 1.0, 1.0);
         let mut prev_bsdf_pdf: Float = 0.0;
@@ -207,7 +195,11 @@ impl PathIntegrator {
             ray = next_ray;
         }
 
-        radiance
+        RGBSpectrum::new(radiance[0], radiance[1], radiance[2])
+    }
+
+    fn samples_per_pixel(&self) -> u32 {
+        self.samples_per_pixel
     }
 }
 

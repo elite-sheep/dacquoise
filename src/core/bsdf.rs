@@ -21,7 +21,7 @@ pub struct BSDFEvalResult {
     pub pdf: Float,
 }
 
-pub trait BSDF {
+pub trait BSDF: Send + Sync {
     fn eval(&self, sample_record: BSDFSampleRecord) -> BSDFEvalResult;
     fn sample(&self, u1: Vector2f, 
                      u2: Vector2f,

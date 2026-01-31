@@ -14,6 +14,7 @@ use crate::materials::lambertian_diffuse::LambertianDiffuseBSDF;
 use crate::math::spectrum::RGBSpectrum;
 use crate::shapes::triangle_mesh::TriangleMesh;
 use crate::textures::constant::ConstantTexture;
+use crate::textures::image::ImageTexture;
 use crate::core::scene::SceneObject;
 use crate::core::bsdf::BSDF;
 use crate::core::integrator::Integrator;
@@ -90,7 +91,8 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
 
     let mut in_texture = false;
     let mut current_texture_name: Option<String> = None;
-    let mut _current_texture_type: Option<String> = None;
+    let mut current_texture_type: Option<String> = None;
+    let mut current_texture_filename: Option<String> = None;
 
     let mut scene = Scene::new();
     scene.set_base_dir(base_dir.to_path_buf());
@@ -300,14 +302,16 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             current_bsdf_reflectance = None;
                             in_texture = false;
                             current_texture_name = None;
-                            _current_texture_type = None;
+                            current_texture_type = None;
+                            current_texture_filename = None;
                         } else {
                             in_bsdf = true;
                             current_bsdf_id = bsdf_id;
                             current_bsdf_reflectance = None;
                             in_texture = false;
                             current_texture_name = None;
-                            _current_texture_type = None;
+                            current_texture_type = None;
+                            current_texture_filename = None;
                         }
                     }
                     b"texture" => {
@@ -322,8 +326,28 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 }
                             }
                             in_texture = true;
-                            _current_texture_type = tex_type;
+                            current_texture_type = tex_type;
                             current_texture_name = tex_name;
+                            current_texture_filename = None;
+                        }
+                    }
+                    b"string" => {
+                        let mut name_attr: Option<String> = None;
+                        let mut value_attr: Option<String> = None;
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"name" => name_attr = Some(attr.unescape_value().unwrap_or_default().to_string()),
+                                b"value" => value_attr = Some(resolve_value(&attr.unescape_value().unwrap_or_default(), &defaults)),
+                                _ => {}
+                            }
+                        }
+                        if let (Some(name_attr), Some(value_attr)) = (name_attr, value_attr) {
+                            if in_texture && name_attr == "filename" {
+                                current_texture_filename = Some(value_attr.clone());
+                            }
+                            if in_shape && name_attr == "filename" {
+                                current_shape_filename = Some(value_attr);
+                            }
                         }
                     }
                     b"rgb" => {
@@ -371,24 +395,6 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             current_shape_scale = Vector3f::new(1.0, 1.0, 1.0);
                         } else {
                             in_shape = false;
-                        }
-                    }
-                    b"string" => {
-                        if in_shape {
-                            let mut name_attr: Option<String> = None;
-                            let mut value_attr: Option<String> = None;
-                            for attr in e.attributes().flatten() {
-                                match attr.key.as_ref() {
-                                    b"name" => name_attr = Some(attr.unescape_value().unwrap_or_default().to_string()),
-                                    b"value" => value_attr = Some(resolve_value(&attr.unescape_value().unwrap_or_default(), &defaults)),
-                                    _ => {}
-                                }
-                            }
-                            if let (Some(name_attr), Some(value_attr)) = (name_attr, value_attr) {
-                                if name_attr == "filename" {
-                                    current_shape_filename = Some(value_attr);
-                                }
-                            }
                         }
                     }
                     b"ref" => {
@@ -446,13 +452,29 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                     b"texture" => {
                         in_texture = false;
                         current_texture_name = None;
-                        _current_texture_type = None;
+                        current_texture_type = None;
+                        current_texture_filename = None;
                     }
                     b"bsdf" => {
                         if in_bsdf {
                             if let Some(id) = current_bsdf_id.take() {
-                                let refl = current_bsdf_reflectance.unwrap_or(RGBSpectrum::new(0.5, 0.5, 0.5));
-                                let texture = Arc::new(ConstantTexture::new(refl)) as Arc<dyn crate::core::texture::Texture>;
+                                let texture = match current_texture_type.as_deref() {
+                                    Some("image") => {
+                                        let filename = current_texture_filename.clone().ok_or(SceneLoadError::MissingField("texture.filename"))?;
+                                        let filename = if Path::new(&filename).is_absolute() {
+                                            filename
+                                        } else {
+                                            base_dir.join(filename).to_string_lossy().to_string()
+                                        };
+                                        let image = ImageTexture::from_file(&filename)
+                                            .map_err(|e| SceneLoadError::Parse(e))?;
+                                        Arc::new(image) as Arc<dyn crate::core::texture::Texture>
+                                    }
+                                    _ => {
+                                        let refl = current_bsdf_reflectance.unwrap_or(RGBSpectrum::new(0.5, 0.5, 0.5));
+                                        Arc::new(ConstantTexture::new(refl)) as Arc<dyn crate::core::texture::Texture>
+                                    }
+                                };
                                 let bsdf = Arc::new(LambertianDiffuseBSDF::new(texture)) as Arc<dyn BSDF>;
                                 bsdfs.insert(id, bsdf);
                             }
@@ -460,7 +482,8 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         in_bsdf = false;
                         in_texture = false;
                         current_texture_name = None;
-                        _current_texture_type = None;
+                        current_texture_type = None;
+                        current_texture_filename = None;
                     }
                     b"emitter" => {
                         in_emitter = false;
