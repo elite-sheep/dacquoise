@@ -22,7 +22,7 @@ pub struct TriangleMesh {
     tri_areas: Vec<Float>,
     total_area: Float,
     tri_normals: Vec<Vector3f>,
-    tri_uvs: Vec<[Vector2f; 3]>,
+    tri_uv_indices: Vec<[Option<usize>; 3]>,
     bvh: Option<BVH>,
 }
 
@@ -36,7 +36,7 @@ impl TriangleMesh {
         let mut tri_areas = Vec::new();
         let mut total_area = 0.0;
         let mut tri_normals = Vec::new();
-        let mut tri_uvs = Vec::new();
+        let mut tri_uv_indices = Vec::new();
 
         for object in obj_set.objects {
             for v in object.vertices {
@@ -71,10 +71,10 @@ impl TriangleMesh {
                             tri_normals.push(n);
                         }
 
-                        let uv0 = a.1.map(|i| i as usize).and_then(|i| uvs.get(i)).cloned().unwrap_or(Vector2f::new(0.0, 0.0));
-                        let uv1 = b.1.map(|i| i as usize).and_then(|i| uvs.get(i)).cloned().unwrap_or(Vector2f::new(0.0, 0.0));
-                        let uv2 = c.1.map(|i| i as usize).and_then(|i| uvs.get(i)).cloned().unwrap_or(Vector2f::new(0.0, 0.0));
-                        tri_uvs.push([uv0, uv1, uv2]);
+                        let uv0 = a.1.map(|i| i as usize);
+                        let uv1 = b.1.map(|i| i as usize);
+                        let uv2 = c.1.map(|i| i as usize);
+                        tri_uv_indices.push([uv0, uv1, uv2]);
                     }
                 }
             }
@@ -88,7 +88,7 @@ impl TriangleMesh {
             tri_areas,
             total_area,
             tri_normals,
-            tri_uvs,
+            tri_uv_indices,
             bvh: None,
         };
         mesh.build_bvh();
@@ -136,8 +136,11 @@ impl TriangleMesh {
     }
 
     fn tri_uv(&self, idx: usize, bary: Vector3f) -> Vector2f {
-        let uvs = self.tri_uvs.get(idx).cloned().unwrap_or([Vector2f::new(0.0, 0.0); 3]);
-        uvs[0] * bary.x + uvs[1] * bary.y + uvs[2] * bary.z
+        let indices = self.tri_uv_indices.get(idx).cloned().unwrap_or([None, None, None]);
+        let uv0 = indices[0].and_then(|i| self.uvs.get(i)).cloned().unwrap_or(Vector2f::new(0.0, 0.0));
+        let uv1 = indices[1].and_then(|i| self.uvs.get(i)).cloned().unwrap_or(Vector2f::new(0.0, 0.0));
+        let uv2 = indices[2].and_then(|i| self.uvs.get(i)).cloned().unwrap_or(Vector2f::new(0.0, 0.0));
+        uv0 * bary.x + uv1 * bary.y + uv2 * bary.z
     }
 }
 
