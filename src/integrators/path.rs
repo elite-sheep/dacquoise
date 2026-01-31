@@ -175,20 +175,20 @@ impl PathIntegrator {
 
             let u1 = Vector2f::new(rng.next_f32(), rng.next_f32());
             let u2 = Vector2f::new(rng.next_f32(), rng.next_f32());
-            let mut sample = material.sample(u1, u2, wi_local);
-            sample.uv = intersection.uv();
-            let wo_local = sample.wo;
-            let pdf = sample.pdf;
-
-            if pdf <= 0.0 {
-                break;
-            }
-
-            let eval = material.eval(sample);
-            let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
-            let cos_theta = wo_local.z.abs();
-            let bsdf_weight = cos_theta / pdf;
-            throughput = throughput.component_mul(&f) * bsdf_weight;
+            let (next_ray, bsdf_weight, bsdf_pdf) = match compute_scatter_ray(
+                material,
+                u1,
+                u2,
+                wi_local,
+                intersection.p(),
+                n,
+                &tangent,
+                &bitangent,
+            ) {
+                Some(v) => v,
+                None => break,
+            };
+            throughput = throughput.component_mul(&bsdf_weight);
 
             if throughput.x <= 0.0 && throughput.y <= 0.0 && throughput.z <= 0.0 {
                 break;
@@ -203,10 +203,8 @@ impl PathIntegrator {
                 throughput /= survival;
             }
 
-            prev_bsdf_pdf = pdf;
-            let wo_world = local_to_world(&wo_local, &tangent, &bitangent, &n);
-            let origin = intersection.p();
-            ray = Ray3f::new(origin, wo_world, Some(1e-4), None);
+            prev_bsdf_pdf = bsdf_pdf;
+            ray = next_ray;
         }
 
         radiance
@@ -221,4 +219,31 @@ fn power_heuristic(pdf_a: Float, pdf_b: Float) -> Float {
     } else {
         a2 / (a2 + b2)
     }
+}
+
+fn compute_scatter_ray(
+    material: &dyn crate::core::bsdf::BSDF,
+    u1: Vector2f,
+    u2: Vector2f,
+    wi_local: Vector3f,
+    p: Vector3f,
+    n: Vector3f,
+    tangent: &Vector3f,
+    bitangent: &Vector3f,
+) -> Option<(Ray3f, Vector3f, Float)> {
+    let sample = material.sample(u1, u2, wi_local);
+    let pdf = sample.pdf;
+    if pdf <= 0.0 {
+        return None;
+    }
+
+    let wo_local = sample.wo;
+    let eval = material.eval(sample);
+    let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
+    let cos_theta = wo_local.z.abs();
+    let bsdf_weight = f * (cos_theta / pdf);
+
+    let wo_world = local_to_world(&wo_local, tangent, bitangent, &n);
+    let origin = p + n * 1e-6;
+    Some((Ray3f::new(origin, wo_world, Some(1e-4), None), bsdf_weight, pdf))
 }
