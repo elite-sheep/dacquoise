@@ -2,12 +2,13 @@
 
 use crate::core::computation_node::ComputationNode;
 use crate::core::integrator::Integrator;
+use crate::core::rng::LcgRng;
 use crate::core::scene::Scene;
 use crate::math::bitmap::Bitmap;
 use crate::math::constants::{Float, Vector2f, Vector3f};
 use indicatif::{ProgressBar, ProgressStyle};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc};
 use std::thread;
 
 pub use super::renderer::Renderer;
@@ -58,17 +59,17 @@ impl Renderer for SimpleRenderer {
                 .unwrap_or_else(|_| ProgressStyle::default_bar()),
         );
 
-        let output = Arc::new(Mutex::new(Bitmap::new(width, height)));
         let next_block = Arc::new(AtomicUsize::new(0));
         let thread_count = thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(1);
+        let (tx, rx) = mpsc::channel::<(usize, usize, usize, usize, Vec<Vector3f>)>();
+        let mut output = vec![Vector3f::zeros(); width * height];
 
         thread::scope(|scope| {
             for _ in 0..thread_count {
-                let output = Arc::clone(&output);
                 let next_block = Arc::clone(&next_block);
-                let progress = progress.clone();
+                let tx = tx.clone();
                 scope.spawn(move || {
                     loop {
                         let block_index = next_block.fetch_add(1, Ordering::Relaxed);
@@ -88,12 +89,12 @@ impl Renderer for SimpleRenderer {
                             for x in x0..x1 {
                                 let mut color = Vector3f::zeros();
                                 let pixel = Vector2f::new(x as Float, y as Float);
-                                for sample in 0..spp {
-                                    let seed = self.seed
-                                        .wrapping_add((y as u64).wrapping_mul(width as u64))
-                                        .wrapping_add(x as u64)
-                                        .wrapping_mul(sample as u64);
-                                    let rgb = integrator_ref.trace_ray_forward(scene_ref, sensor_ref, pixel, seed);
+                                let seed = ((self.seed & 0xFFF) << 32)
+                                    | (((y as u64) & 0xFFFF) << 16)
+                                    | ((x as u64) & 0xFFFF);
+                                let mut rng = LcgRng::new(seed);
+                                for _sample in 0..spp {
+                                    let rgb = integrator_ref.trace_ray_forward(scene_ref, sensor_ref, pixel, &mut rng);
                                     color += Vector3f::new(rgb[0], rgb[1], rgb[2]);
                                 }
                                 let local_x = x - x0;
@@ -101,32 +102,35 @@ impl Renderer for SimpleRenderer {
                                 block[local_x + (x1 - x0) * local_y] = color * inv_spp;
                             }
                         }
-
-                        let mut bitmap = match output.lock() {
-                            Ok(guard) => guard,
-                            Err(poisoned) => poisoned.into_inner(),
-                        };
-                        for y in y0..y1 {
-                            for x in x0..x1 {
-                                let local_x = x - x0;
-                                let local_y = y - y0;
-                                bitmap[(x, y)] = block[local_x + (x1 - x0) * local_y];
-                            }
+                        if tx.send((x0, y0, x1, y1, block)).is_err() {
+                            break;
                         }
-                        progress.inc(1);
                     }
                 });
             }
+
+            drop(tx);
+            for _ in 0..total_blocks {
+                if let Ok((x0, y0, x1, y1, block)) = rx.recv() {
+                    for y in y0..y1 {
+                        for x in x0..x1 {
+                            let local_x = x - x0;
+                            let local_y = y - y0;
+                            output[x + width * y] = block[local_x + (x1 - x0) * local_y];
+                        }
+                    }
+                    progress.inc(1);
+                }
+            }
         });
         progress.finish_and_clear();
-        let bitmap = match Arc::try_unwrap(output) {
-            Ok(mutex) => match mutex.into_inner() {
-                Ok(bmp) => bmp,
-                Err(poisoned) => poisoned.into_inner(),
-            },
-            Err(arc) => arc.lock().map(|bmp| bmp.clone()).unwrap_or_else(|e| e.into_inner().clone()),
-        };
-        *sensor.bitmap_mut() = bitmap.clone();
+        let bitmap = sensor.bitmap_mut();
+        for y in 0..height {
+            for x in 0..width {
+                bitmap[(x, y)] = output[x + width * y];
+            }
+        }
+        let bitmap = bitmap.clone();
         scene.insert_sensor(self.camera_id, sensor);
         bitmap
     }

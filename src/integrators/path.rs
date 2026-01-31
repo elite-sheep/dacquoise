@@ -1,6 +1,7 @@
 // Copyright @yucwang 2026
 
 use crate::core::integrator::Integrator;
+use crate::core::rng::LcgRng;
 use crate::core::scene::Scene;
 use crate::core::sensor::Sensor;
 use crate::core::tangent_frame::{build_tangent_frame, local_to_world, world_to_local};
@@ -8,25 +9,6 @@ use crate::core::bsdf::BSDFSampleRecord;
 use crate::math::constants::{Float, Vector2f, Vector3f};
 use crate::math::ray::Ray3f;
 use crate::math::spectrum::{RGBSpectrum, Spectrum};
-
-struct LcgRng {
-    state: u64,
-}
-
-impl LcgRng {
-    fn new(seed: u64) -> Self {
-        Self { state: seed }
-    }
-
-    fn next_u32(&mut self) -> u32 {
-        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1);
-        (self.state >> 32) as u32
-    }
-
-    fn next_f32(&mut self) -> Float {
-        (self.next_u32() as Float) / (u32::MAX as Float)
-    }
-}
 
 pub struct PathIntegrator {
     pub max_depth: u32,
@@ -40,7 +22,7 @@ impl PathIntegrator {
 }
 
 impl Integrator for PathIntegrator {
-    fn trace_ray_forward(&self, scene: &Scene, sensor: &dyn Sensor, pixel: Vector2f, seed: u64) -> RGBSpectrum {
+    fn trace_ray_forward(&self, scene: &Scene, sensor: &dyn Sensor, pixel: Vector2f, rng: &mut LcgRng) -> RGBSpectrum {
         let (width, height) = {
             let bmp = sensor.bitmap();
             (bmp.width(), bmp.height())
@@ -51,7 +33,6 @@ impl Integrator for PathIntegrator {
 
         let px = pixel.x;
         let py = pixel.y;
-        let mut rng = LcgRng::new(seed);
         let u = (px + rng.next_f32()) / (width as Float);
         let v = (py + rng.next_f32()) / (height as Float);
         let mut ray = sensor.sample_ray(&Vector2f::new(u, v));
