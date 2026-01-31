@@ -451,9 +451,6 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                     }
                     b"texture" => {
                         in_texture = false;
-                        current_texture_name = None;
-                        current_texture_type = None;
-                        current_texture_filename = None;
                     }
                     b"bsdf" => {
                         if in_bsdf {

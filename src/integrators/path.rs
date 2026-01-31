@@ -78,6 +78,7 @@ impl Integrator for PathIntegrator {
                 None => break,
             };
 
+
             // Next Event Estimation (direct lighting), skip if this is the last bounce
             if bounce + 1 < self.max_depth {
                 if let Some(light_sample) = scene.sample_emitter(
@@ -149,6 +150,7 @@ impl Integrator for PathIntegrator {
                 u1,
                 u2,
                 wi_local,
+                intersection.uv(),
                 intersection.p(),
                 n,
                 &tangent,
@@ -199,12 +201,14 @@ fn compute_scatter_ray(
     u1: Vector2f,
     u2: Vector2f,
     wi_local: Vector3f,
+    uv: Vector2f,
     p: Vector3f,
     n: Vector3f,
     tangent: &Vector3f,
     bitangent: &Vector3f,
 ) -> Option<(Ray3f, Vector3f, Float)> {
-    let sample = material.sample(u1, u2, wi_local);
+    let mut sample = material.sample(u1, u2, wi_local);
+    sample.uv = uv;
     let pdf = sample.pdf;
     if pdf <= 0.0 {
         return None;
