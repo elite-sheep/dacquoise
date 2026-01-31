@@ -1,30 +1,14 @@
 // Copyright @yucwang 2026
 
 use crate::core::integrator::Integrator;
+use crate::core::rng::LcgRng;
 use crate::core::scene::Scene;
 use crate::core::sensor::Sensor;
 use crate::core::tangent_frame::{build_tangent_frame, local_to_world, world_to_local};
+use crate::core::bsdf::BSDFSampleRecord;
 use crate::math::constants::{Float, Vector2f, Vector3f};
-use crate::math::spectrum::Spectrum;
-
-struct LcgRng {
-    state: u64,
-}
-
-impl LcgRng {
-    fn new(seed: u64) -> Self {
-        Self { state: seed }
-    }
-
-    fn next_u32(&mut self) -> u32 {
-        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1);
-        (self.state >> 32) as u32
-    }
-
-    fn next_f32(&mut self) -> Float {
-        (self.next_u32() as Float) / (u32::MAX as Float)
-    }
-}
+use crate::math::ray::Ray3f;
+use crate::math::spectrum::{RGBSpectrum, Spectrum};
 
 pub struct PathIntegrator {
     pub max_depth: u32,
@@ -38,33 +22,20 @@ impl PathIntegrator {
 }
 
 impl Integrator for PathIntegrator {
-    fn render_forward(&self, scene: &Scene, sensor: &mut dyn Sensor, seed: u64) {
+    fn trace_ray_forward(&self, scene: &Scene, sensor: &dyn Sensor, pixel: Vector2f, rng: &mut LcgRng) -> RGBSpectrum {
         let (width, height) = {
             let bmp = sensor.bitmap();
             (bmp.width(), bmp.height())
         };
-
-        let spp = if self.samples_per_pixel == 0 { 1 } else { self.samples_per_pixel };
-        let inv_spp = 1.0 / (spp as Float);
-        let mut rng = LcgRng::new(seed);
-
-        for y in 0..height {
-            for x in 0..width {
-                let mut color = Vector3f::zeros();
-                for _ in 0..spp {
-                    let u = (x as Float + rng.next_f32()) / (width as Float);
-                    let v = (y as Float + rng.next_f32()) / (height as Float);
-                    let ray = sensor.sample_ray(&Vector2f::new(u, v));
-                    color += self.trace_path(scene, ray, &mut rng);
-                }
-                sensor.bitmap_mut()[(x, y)] = color * inv_spp;
-            }
+        if width == 0 || height == 0 {
+            return RGBSpectrum::default();
         }
-    }
-}
 
-impl PathIntegrator {
-    fn trace_path(&self, scene: &Scene, mut ray: crate::math::ray::Ray3f, rng: &mut LcgRng) -> Vector3f {
+        let px = pixel.x;
+        let py = pixel.y;
+        let u = (px + rng.next_f32()) / (width as Float);
+        let v = (py + rng.next_f32()) / (height as Float);
+        let mut ray = sensor.sample_ray(&Vector2f::new(u, v));
         let mut radiance = Vector3f::zeros();
         let mut throughput = Vector3f::new(1.0, 1.0, 1.0);
         let mut prev_bsdf_pdf: Float = 0.0;
@@ -126,7 +97,7 @@ impl PathIntegrator {
                             let cos_light = light_intersection.geo_normal().dot(&(-wo_world)).max(0.0);
 
                             if cos_light > 0.0 {
-                                let shadow_ray = crate::math::ray::Ray3f::new(
+                                let shadow_ray = Ray3f::new(
                                     p + n * 1e-3,
                                     wo_world,
                                     Some(1e-3),
@@ -145,10 +116,11 @@ impl PathIntegrator {
 
                                 if !is_occluded {
                                     let wo_local = world_to_local(&wo_world, &tangent, &bitangent, &n);
-                                    let mut eval_record = crate::core::bsdf::BSDFSampleRecord::default();
+                                    let mut eval_record = BSDFSampleRecord::default();
                                     eval_record.wi = wi_local;
                                     eval_record.wo = wo_local;
                                     eval_record.pdf = 0.0;
+                                    eval_record.uv = intersection.uv();
                                     let eval = material.eval(eval_record);
                                     let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
                                     let cos_theta = wo_local.z.abs();
@@ -172,19 +144,20 @@ impl PathIntegrator {
 
             let u1 = Vector2f::new(rng.next_f32(), rng.next_f32());
             let u2 = Vector2f::new(rng.next_f32(), rng.next_f32());
-            let sample = material.sample(u1, u2, wi_local);
-            let wo_local = sample.wo;
-            let pdf = sample.pdf;
-
-            if pdf <= 0.0 {
-                break;
-            }
-
-            let eval = material.eval(sample);
-            let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
-            let cos_theta = wo_local.z.abs();
-            let bsdf_weight = cos_theta / pdf;
-            throughput = throughput.component_mul(&f) * bsdf_weight;
+            let (next_ray, bsdf_weight, bsdf_pdf) = match compute_scatter_ray(
+                material,
+                u1,
+                u2,
+                wi_local,
+                intersection.p(),
+                n,
+                &tangent,
+                &bitangent,
+            ) {
+                Some(v) => v,
+                None => break,
+            };
+            throughput = throughput.component_mul(&bsdf_weight);
 
             if throughput.x <= 0.0 && throughput.y <= 0.0 && throughput.z <= 0.0 {
                 break;
@@ -199,13 +172,15 @@ impl PathIntegrator {
                 throughput /= survival;
             }
 
-            prev_bsdf_pdf = pdf;
-            let wo_world = local_to_world(&wo_local, &tangent, &bitangent, &n);
-            let origin = intersection.p();
-            ray = crate::math::ray::Ray3f::new(origin, wo_world, Some(1e-4), None);
+            prev_bsdf_pdf = bsdf_pdf;
+            ray = next_ray;
         }
 
-        radiance
+        RGBSpectrum::new(radiance[0], radiance[1], radiance[2])
+    }
+
+    fn samples_per_pixel(&self) -> u32 {
+        self.samples_per_pixel
     }
 }
 
@@ -217,4 +192,31 @@ fn power_heuristic(pdf_a: Float, pdf_b: Float) -> Float {
     } else {
         a2 / (a2 + b2)
     }
+}
+
+fn compute_scatter_ray(
+    material: &dyn crate::core::bsdf::BSDF,
+    u1: Vector2f,
+    u2: Vector2f,
+    wi_local: Vector3f,
+    p: Vector3f,
+    n: Vector3f,
+    tangent: &Vector3f,
+    bitangent: &Vector3f,
+) -> Option<(Ray3f, Vector3f, Float)> {
+    let sample = material.sample(u1, u2, wi_local);
+    let pdf = sample.pdf;
+    if pdf <= 0.0 {
+        return None;
+    }
+
+    let wo_local = sample.wo;
+    let eval = material.eval(sample);
+    let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
+    let cos_theta = wo_local.z.abs();
+    let bsdf_weight = f * (cos_theta / pdf);
+
+    let wo_world = local_to_world(&wo_local, tangent, bitangent, &n);
+    let origin = p + n * 1e-6;
+    Some((Ray3f::new(origin, wo_world, Some(1e-4), None), bsdf_weight, pdf))
 }

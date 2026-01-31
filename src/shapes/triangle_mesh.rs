@@ -22,6 +22,7 @@ pub struct TriangleMesh {
     tri_areas: Vec<Float>,
     total_area: Float,
     tri_normals: Vec<Vector3f>,
+    tri_uv_indices: Vec<[Option<usize>; 3]>,
     bvh: Option<BVH>,
 }
 
@@ -35,6 +36,7 @@ impl TriangleMesh {
         let mut tri_areas = Vec::new();
         let mut total_area = 0.0;
         let mut tri_normals = Vec::new();
+        let mut tri_uv_indices = Vec::new();
 
         for object in obj_set.objects {
             for v in object.vertices {
@@ -68,6 +70,11 @@ impl TriangleMesh {
                             let n = (p1 - p0).cross(&(p2 - p0)).normalize();
                             tri_normals.push(n);
                         }
+
+                        let uv0 = a.1.map(|i| i as usize);
+                        let uv1 = b.1.map(|i| i as usize);
+                        let uv2 = c.1.map(|i| i as usize);
+                        tri_uv_indices.push([uv0, uv1, uv2]);
                     }
                 }
             }
@@ -81,6 +88,7 @@ impl TriangleMesh {
             tri_areas,
             total_area,
             tri_normals,
+            tri_uv_indices,
             bvh: None,
         };
         mesh.build_bvh();
@@ -126,6 +134,14 @@ impl TriangleMesh {
 
         self.bvh = Some(BVH::new(prim_bounds, prim_centroids));
     }
+
+    fn tri_uv(&self, idx: usize, bary: Vector3f) -> Vector2f {
+        let indices = self.tri_uv_indices.get(idx).cloned().unwrap_or([None, None, None]);
+        let uv0 = indices[0].and_then(|i| self.uvs.get(i)).cloned().unwrap_or(Vector2f::new(0.0, 0.0));
+        let uv1 = indices[1].and_then(|i| self.uvs.get(i)).cloned().unwrap_or(Vector2f::new(0.0, 0.0));
+        let uv2 = indices[2].and_then(|i| self.uvs.get(i)).cloned().unwrap_or(Vector2f::new(0.0, 0.0));
+        uv0 * bary.x + uv1 * bary.y + uv2 * bary.z
+    }
 }
 
 impl Shape for TriangleMesh {
@@ -153,11 +169,13 @@ impl Shape for TriangleMesh {
                 if sh_n.dot(&geo_n) < 0.0 {
                     sh_n = -sh_n;
                 }
+                let bary = self.triangles[idx].barycentric(&hit.p());
+                let uv = self.tri_uv(idx, bary);
                 return Some(SurfaceIntersection::new(
                     hit.p(),
                     geo_n,
                     sh_n,
-                    Vector2f::new(0.0, 0.0),
+                    uv,
                     hit.t(),
                     RGBSpectrum::default(),
                     None,
@@ -174,11 +192,13 @@ impl Shape for TriangleMesh {
                         if sh_n.dot(&geo_n) < 0.0 {
                             sh_n = -sh_n;
                         }
+                        let bary = tri.barycentric(&hit.p());
+                        let uv = self.tri_uv(idx, bary);
                         let hit = SurfaceIntersection::new(
                             hit.p(),
                             geo_n,
                             sh_n,
-                            Vector2f::new(0.0, 0.0),
+                            uv,
                             hit_t,
                             RGBSpectrum::default(),
                             None,
@@ -231,10 +251,29 @@ impl Shape for TriangleMesh {
 
         let tri_area = self.tri_areas[idx].max(1e-6);
         let local_u = Vector2f::new(((target - (accum - tri_area)) / tri_area).min(0.999999), u.y);
-        let mut record = self.triangles[idx].sample(&local_u);
-        let pdf = 1.0 / self.total_area;
-        record.set_pdf(pdf);
-        record
+
+        let bary = crate::math::warp::square_to_triangle(&local_u);
+        let (p0, p1, p2) = self.triangles[idx].vertices();
+        let p = p0 * bary.x + p1 * bary.y + p2 * bary.z;
+
+        let geo_n = self.triangles[idx].geometric_normal();
+        let mut sh_n = self.tri_normals.get(idx).cloned().unwrap_or(geo_n);
+        if sh_n.dot(&geo_n) < 0.0 {
+            sh_n = -sh_n;
+        }
+
+        let uv = self.tri_uv(idx, bary);
+        let intersection = SurfaceIntersection::new(
+            p,
+            geo_n,
+            sh_n,
+            uv,
+            0.0,
+            RGBSpectrum::default(),
+            None,
+            None,
+        );
+        SurfaceSampleRecord::new(intersection, 1.0 / self.total_area)
     }
 
     fn surface_area(&self) -> Float {

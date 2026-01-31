@@ -8,5 +8,7 @@ pub mod interaction;
 pub mod sensor;
 pub mod scene;
 pub mod scene_loader;
+pub mod rng;
 pub mod shape;
 pub mod tangent_frame;
+pub mod texture;

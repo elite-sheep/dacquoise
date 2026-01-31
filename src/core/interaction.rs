@@ -46,6 +46,10 @@ impl SurfaceIntersection {
         self.p
     }
 
+    pub fn uv(&self) -> Vector2f {
+        self.uv
+    }
+
     pub fn geo_normal(&self) -> Vector3f {
         self.geo_normal
     }
