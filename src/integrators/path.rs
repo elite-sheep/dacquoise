@@ -265,6 +265,7 @@ fn compute_scatter_ray(
     let bsdf_weight = f * (cos_theta / pdf);
 
     let wo_world = local_to_world(&wo_local, tangent, bitangent, &n);
-    let origin = p + n * 1e-6;
+    let offset_dir = if wo_world.dot(&n) >= 0.0 { n } else { -n };
+    let origin = p + offset_dir * 1e-6;
     Some((Ray3f::new(origin, wo_world, Some(1e-4), None), bsdf_weight, pdf))
 }

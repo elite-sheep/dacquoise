@@ -14,6 +14,14 @@ pub struct ImageTexture {
     data: Vec<(Float, Float, Float)>,
 }
 
+fn srgb_to_linear(v: Float) -> Float {
+    if v <= 0.04045 {
+        v / 12.92
+    } else {
+        ((v + 0.055) / 1.055).powf(2.4)
+    }
+}
+
 impl ImageTexture {
     pub fn from_rgb(r: Float, g: Float, b: Float) -> Self {
         Self {
@@ -46,7 +54,7 @@ impl ImageTexture {
         Ok(image.layer_data.channel_data.pixels)
     }
 
-    pub fn from_jpg(path: &str) -> std::result::Result<Self, String> {
+    pub fn from_image(path: &str, srgb: bool) -> std::result::Result<Self, String> {
         let img = ImageReader::open(path)
             .map_err(|e| format!("failed to open image {}: {}", path, e))?
             .decode()
@@ -58,7 +66,13 @@ impl ImageTexture {
         for y in 0..height {
             for x in 0..width {
                 let p = rgb.get_pixel(x, y);
-                data.push((p[0], p[1], p[2]));
+                let (mut r, mut g, mut b) = (p[0], p[1], p[2]);
+                if srgb {
+                    r = srgb_to_linear(r);
+                    g = srgb_to_linear(g);
+                    b = srgb_to_linear(b);
+                }
+                data.push((r, g, b));
             }
         }
 
@@ -70,6 +84,10 @@ impl ImageTexture {
     }
 
     pub fn from_file(path: &str) -> std::result::Result<Self, String> {
+        Self::from_file_with_srgb(path, true)
+    }
+
+    pub fn from_file_with_srgb(path: &str, srgb: bool) -> std::result::Result<Self, String> {
         let ext = Path::new(path)
             .extension()
             .and_then(|s| s.to_str())
@@ -78,7 +96,7 @@ impl ImageTexture {
 
         match ext.as_str() {
             "exr" => Self::from_exr(path),
-            "jpg" | "jpeg" => Self::from_jpg(path),
+            "jpg" | "jpeg" | "png" => Self::from_image(path, srgb),
             _ => Err(format!("unsupported texture format: {}", ext)),
         }
     }

@@ -41,8 +41,18 @@ fn main() {
     let mut min = (f32::INFINITY, f32::INFINITY, f32::INFINITY);
     let mut max = (f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
     let mut sum = (0.0f64, 0.0f64, 0.0f64);
+    let mut nan_count = 0usize;
+    let mut inf_count = 0usize;
 
     for (r, g, b, _) in &img.data {
+        if !r.is_finite() || !g.is_finite() || !b.is_finite() {
+            if r.is_nan() || g.is_nan() || b.is_nan() {
+                nan_count += 1;
+            } else {
+                inf_count += 1;
+            }
+            continue;
+        }
         if *r < min.0 { min.0 = *r; }
         if *g < min.1 { min.1 = *g; }
         if *b < min.2 { min.2 = *b; }
@@ -59,4 +69,7 @@ fn main() {
     println!("Min RGB: {:.6}, {:.6}, {:.6}", min.0, min.1, min.2);
     println!("Max RGB: {:.6}, {:.6}, {:.6}", max.0, max.1, max.2);
     println!("Mean RGB: {:.6}, {:.6}, {:.6}", sum.0 / n, sum.1 / n, sum.2 / n);
+    if nan_count > 0 || inf_count > 0 {
+        println!("Non-finite pixels: NaN {}, Inf {}", nan_count, inf_count);
+    }
 }
