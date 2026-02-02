@@ -15,6 +15,7 @@ use crate::math::spectrum::RGBSpectrum;
 use crate::shapes::triangle_mesh::TriangleMesh;
 use crate::textures::constant::ConstantTexture;
 use crate::textures::image::ImageTexture;
+use crate::emitters::directional::DirectionalEmitter;
 use crate::core::scene::SceneObject;
 use crate::core::bsdf::BSDF;
 use crate::core::integrator::Integrator;
@@ -72,6 +73,8 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut origin: Option<Vector3f> = None;
     let mut target: Option<Vector3f> = None;
     let mut up: Option<Vector3f> = None;
+    let mut near_clip: Option<Float> = None;
+    let mut far_clip: Option<Float> = None;
     let mut width: Option<usize> = None;
     let mut height: Option<usize> = None;
     let mut max_depth: Option<u32> = None;
@@ -84,6 +87,9 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut current_shape_filename: Option<String> = None;
     let mut current_shape_bsdf_ref: Option<String> = None;
     let mut current_emitter_radiance: Option<RGBSpectrum> = None;
+    let mut current_emitter_type: Option<String> = None;
+    let mut current_emitter_direction: Option<Vector3f> = None;
+    let mut current_emitter_irradiance: Option<RGBSpectrum> = None;
     let mut current_shape_emissive: bool = false;
     let mut current_shape_id: Option<String> = None;
     let mut current_shape_translate = Vector3f::new(0.0, 0.0, 0.0);
@@ -229,6 +235,12 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 if name_attr == "fov" {
                                     fov_deg = Some(parse_float(&value_attr)?);
                                 }
+                                if name_attr == "near_clip" {
+                                    near_clip = Some(parse_float(&value_attr)?);
+                                }
+                                if name_attr == "far_clip" {
+                                    far_clip = Some(parse_float(&value_attr)?);
+                                }
                             }
                         }
                         if in_emitter {
@@ -244,6 +256,10 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             if let (Some(name_attr), Some(value_attr)) = (name_attr, value_attr) {
                                 if name_attr == "radiance" {
                                     current_emitter_radiance = Some(parse_vec3_spectrum(&value_attr)?);
+                                }
+                                if current_emitter_type.as_deref() == Some("directional") && name_attr == "irradiance" {
+                                    let v = parse_float(&value_attr)?;
+                                    current_emitter_irradiance = Some(RGBSpectrum::new(v, v, v));
                                 }
                             }
                         }
@@ -372,6 +388,27 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             if in_emitter && name_attr == "radiance" {
                                 current_emitter_radiance = Some(parse_vec3_spectrum(&value_attr)?);
                             }
+                            if in_emitter && current_emitter_type.as_deref() == Some("directional") && name_attr == "irradiance" {
+                                current_emitter_irradiance = Some(parse_vec3_spectrum(&value_attr)?);
+                            }
+                        }
+                    }
+                    b"vector" => {
+                        if in_emitter {
+                            let mut name_attr: Option<String> = None;
+                            let mut value_attr: Option<String> = None;
+                            for attr in e.attributes().flatten() {
+                                match attr.key.as_ref() {
+                                    b"name" => name_attr = Some(attr.unescape_value().unwrap_or_default().to_string()),
+                                    b"value" => value_attr = Some(resolve_value(&attr.unescape_value().unwrap_or_default(), &defaults)),
+                                    _ => {}
+                                }
+                            }
+                            if let (Some(name_attr), Some(value_attr)) = (name_attr, value_attr) {
+                                if current_emitter_type.as_deref() == Some("directional") && name_attr == "direction" {
+                                    current_emitter_direction = Some(parse_vec3(&value_attr)?);
+                                }
+                            }
                         }
                     }
                     b"shape" => {
@@ -407,9 +444,21 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         }
                     }
                     b"emitter" => {
+                        let mut emitter_type: Option<String> = None;
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"type" {
+                                emitter_type = Some(resolve_value(&attr.unescape_value().unwrap_or_default(), &defaults));
+                            }
+                        }
+                        current_emitter_type = emitter_type;
+                        current_emitter_radiance = None;
                         if in_shape {
                             in_emitter = true;
                             current_shape_emissive = true;
+                        } else {
+                            in_emitter = true;
+                            current_emitter_direction = None;
+                            current_emitter_irradiance = None;
                         }
                     }
                     _ => {}
@@ -428,7 +477,17 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
 
                             let aspect = width as Float / height as Float;
                             let fov_rad = fov_deg * std::f32::consts::PI / 180.0;
-                            let camera = PerspectiveCamera::new(origin, target, up, fov_rad, aspect, width, height);
+                            let camera = PerspectiveCamera::new(
+                                origin,
+                                target,
+                                up,
+                                fov_rad,
+                                aspect,
+                                width,
+                                height,
+                                near_clip.unwrap_or(0.0),
+                                far_clip.unwrap_or(std::f32::MAX),
+                            );
                             scene.add_sensor(Box::new(camera));
                         }
 
@@ -439,6 +498,8 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         origin = None;
                         target = None;
                         up = None;
+                        near_clip = None;
+                        far_clip = None;
                         width = None;
                         height = None;
                     }
@@ -483,7 +544,23 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         current_texture_filename = None;
                     }
                     b"emitter" => {
+                        if in_emitter && !in_shape {
+                            if current_emitter_type.as_deref() == Some("directional") {
+                                let direction = current_emitter_direction
+                                    .ok_or(SceneLoadError::MissingField("emitter.direction"))?;
+                                let irradiance = current_emitter_irradiance
+                                    .ok_or(SceneLoadError::MissingField("emitter.irradiance"))?;
+                                let emitter = DirectionalEmitter::new_with(
+                                    direction,
+                                    irradiance,
+                                );
+                                scene.add_emitter(Box::new(emitter));
+                            }
+                        }
                         in_emitter = false;
+                        current_emitter_type = None;
+                        current_emitter_direction = None;
+                        current_emitter_irradiance = None;
                     }
                     b"shape" => {
                         if in_shape {
@@ -508,7 +585,8 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 mesh.apply_transform(&current_shape_scale, &current_shape_translate);
                             }
 
-                            let mut object = SceneObject::new(Box::new(mesh), material);
+                            let shape = Arc::new(mesh);
+                            let mut object = SceneObject::new(shape.clone(), material);
                             if let Some(id) = current_shape_id.take() {
                                 object = object.with_name(id);
                             }

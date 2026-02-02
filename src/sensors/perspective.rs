@@ -12,6 +12,8 @@ pub struct PerspectiveCamera {
     up: Vector3f,
     tan_half_fov_y: Float,
     aspect: Float,
+    near_clip: Float,
+    far_clip: Float,
     bitmap: Bitmap,
 }
 
@@ -22,7 +24,9 @@ impl PerspectiveCamera {
                fov_y_radians: Float,
                aspect: Float,
                width: usize,
-               height: usize) -> Self {
+               height: usize,
+               near_clip: Float,
+               far_clip: Float) -> Self {
         let forward = (target - origin).normalize();
         let right = forward.cross(&up).normalize();
         let up = right.cross(&forward).normalize();
@@ -34,6 +38,8 @@ impl PerspectiveCamera {
             up,
             tan_half_fov_y: (0.5 * fov_y_radians).tan(),
             aspect,
+            near_clip,
+            far_clip,
             bitmap: Bitmap::new(width, height),
         }
     }
@@ -44,8 +50,10 @@ impl Sensor for PerspectiveCamera {
         let px = (2.0 * u.x - 1.0) * self.aspect * self.tan_half_fov_y;
         let py = (1.0 - 2.0 * u.y) * self.tan_half_fov_y;
 
-        let dir = (self.forward + self.right * px + self.up * py).normalize();
-        Ray3f::new(self.origin, dir, None, None)
+        let p_camera = Vector3f::new(px, py, 1.0);
+        let p_world = self.origin + self.right * p_camera.x + self.up * p_camera.y + self.forward * p_camera.z;
+        let dir = (p_world - self.origin).normalize();
+        Ray3f::new(self.origin, dir, Some(self.near_clip), Some(self.far_clip))
     }
 
     fn bitmap(&self) -> &Bitmap {
@@ -68,7 +76,7 @@ mod tests {
         let up = Vector3f::new(0.0, 1.0, 0.0);
         let fov_y = std::f32::consts::FRAC_PI_2;
         let aspect = 1.0;
-        let cam = PerspectiveCamera::new(origin, target, up, fov_y, aspect, 4, 4);
+        let cam = PerspectiveCamera::new(origin, target, up, fov_y, aspect, 4, 4, 0.0, std::f32::MAX);
 
         let ray = cam.sample_ray(&Vector2f::new(0.5, 0.5));
         let dir = ray.dir();

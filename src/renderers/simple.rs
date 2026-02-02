@@ -39,6 +39,8 @@ impl Renderer for SimpleRenderer {
         if width == 0 || height == 0 {
             return Bitmap::new(0, 0);
         }
+
+        scene.build_bvh();
         let spp = match self.integrator.samples_per_pixel() {
             0 => 1,
             v => v,
