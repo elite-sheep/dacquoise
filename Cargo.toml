@@ -17,6 +17,7 @@ wavefront_obj = "11.0.0"
 quick-xml = "0.31.0"
 image = "0.24.7"
 indicatif = "0.17.8"
+ply-rs-bw = "2.0.2"
 
 [profile.release]
 lto = true

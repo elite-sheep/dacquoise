@@ -15,6 +15,14 @@ pub struct ImageTexture {
 }
 
 impl ImageTexture {
+    pub fn from_rgb(r: Float, g: Float, b: Float) -> Self {
+        Self {
+            width: 1,
+            height: 1,
+            data: vec![(r, g, b)],
+        }
+    }
+
     pub fn from_exr(path: &str) -> std::result::Result<Self, String> {
         let image = read()
             .no_deep_data()
@@ -73,6 +81,10 @@ impl ImageTexture {
             "jpg" | "jpeg" => Self::from_jpg(path),
             _ => Err(format!("unsupported texture format: {}", ext)),
         }
+    }
+
+    pub fn dimensions(&self) -> (usize, usize) {
+        (self.width, self.height)
     }
 
     fn sample_nearest(&self, uv: Vector2f) -> RGBSpectrum {

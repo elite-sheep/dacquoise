@@ -44,7 +44,16 @@ impl Integrator for PathIntegrator {
         for bounce in 0..self.max_depth {
             let intersection = match scene.ray_intersection(&ray) {
                 Some(h) => h,
-                None => break,
+                None => {
+                    let mut env = RGBSpectrum::default();
+                    for emitter in scene.emitters() {
+                        env += emitter.eval_direction(&(-ray.dir()));
+                    }
+                    if env.is_black() == false {
+                        radiance += throughput.component_mul(&Vector3f::new(env[0], env[1], env[2]));
+                    }
+                    break;
+                }
             };
 
             let le = intersection.le();

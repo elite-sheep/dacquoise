@@ -2,3 +2,4 @@
 
 pub mod area;
 pub mod directional;
+pub mod envmap;

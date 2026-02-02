@@ -11,8 +11,40 @@ use crate::math::aabb::AABB;
 use crate::math::constants::{ Float, Vector2f, Vector3f };
 use crate::math::ray::Ray3f;
 use crate::math::spectrum::RGBSpectrum;
+use crate::math::transform::Transform;
 
+use ply_rs_bw::parser::Parser;
+use ply_rs_bw::ply::{DefaultElement, Property};
+
+use std::fmt;
+use std::fs::File;
+use std::io::BufReader;
 use std::vec::Vec;
+
+#[derive(Debug)]
+pub enum PlyLoadError {
+    Io(std::io::Error),
+    Parse(String),
+    MissingElement(&'static str),
+}
+
+impl From<std::io::Error> for PlyLoadError {
+    fn from(err: std::io::Error) -> Self {
+        PlyLoadError::Io(err)
+    }
+}
+
+impl fmt::Display for PlyLoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PlyLoadError::Io(err) => write!(f, "io error: {}", err),
+            PlyLoadError::Parse(err) => write!(f, "parse error: {}", err),
+            PlyLoadError::MissingElement(name) => write!(f, "missing element: {}", name),
+        }
+    }
+}
+
+impl std::error::Error for PlyLoadError {}
 
 pub struct TriangleMesh {
     vertices: Vec<Vector3f>,
@@ -95,6 +127,122 @@ impl TriangleMesh {
         Ok(mesh)
     }
 
+    pub fn from_ply(path: &str) -> Result<Self, PlyLoadError> {
+        let file = File::open(path)?;
+        let parser = Parser::<DefaultElement>::new();
+        let ply = parser
+            .read_ply(&mut BufReader::new(file))
+            .map_err(|e| PlyLoadError::Parse(e.to_string()))?;
+
+        let vertices_payload = ply
+            .payload
+            .get("vertex")
+            .ok_or(PlyLoadError::MissingElement("vertex"))?;
+
+        let mut vertices = Vec::with_capacity(vertices_payload.len());
+        let mut normals = Vec::with_capacity(vertices_payload.len());
+        let mut uvs = Vec::with_capacity(vertices_payload.len());
+        let mut has_uv = true;
+        let mut has_normals = true;
+
+        for v in vertices_payload {
+            let x = ply_prop_f32(v, "x").ok_or(PlyLoadError::MissingElement("vertex.x"))?;
+            let y = ply_prop_f32(v, "y").ok_or(PlyLoadError::MissingElement("vertex.y"))?;
+            let z = ply_prop_f32(v, "z").ok_or(PlyLoadError::MissingElement("vertex.z"))?;
+            vertices.push(Vector3f::new(x, y, z));
+
+            let u = ply_prop_f32(v, "u").or_else(|| ply_prop_f32(v, "s"));
+            let vv = ply_prop_f32(v, "v").or_else(|| ply_prop_f32(v, "t"));
+            if let (Some(u), Some(vv)) = (u, vv) {
+                uvs.push(Vector2f::new(u, vv));
+            } else {
+                has_uv = false;
+                uvs.push(Vector2f::new(0.0, 0.0));
+            }
+
+            let nx = ply_prop_f32(v, "nx");
+            let ny = ply_prop_f32(v, "ny");
+            let nz = ply_prop_f32(v, "nz");
+            if let (Some(nx), Some(ny), Some(nz)) = (nx, ny, nz) {
+                normals.push(Vector3f::new(nx, ny, nz));
+            } else {
+                has_normals = false;
+                normals.push(Vector3f::new(0.0, 0.0, 0.0));
+            }
+        }
+
+        let faces_payload = ply
+            .payload
+            .get("face")
+            .ok_or(PlyLoadError::MissingElement("face"))?;
+
+        let mut triangles = Vec::new();
+        let mut tri_areas = Vec::new();
+        let mut total_area = 0.0;
+        let mut tri_normals = Vec::new();
+        let mut tri_uv_indices = Vec::new();
+
+        for face in faces_payload {
+            let indices = ply_prop_indices(face, "vertex_indices")
+                .or_else(|| ply_prop_indices(face, "vertex_index"))
+                .ok_or(PlyLoadError::MissingElement("face.vertex_indices"))?;
+
+            if indices.len() < 3 {
+                continue;
+            }
+
+            for i in 1..(indices.len() - 1) {
+                let i0 = indices[0];
+                let i1 = indices[i];
+                let i2 = indices[i + 1];
+                if i0 >= vertices.len() || i1 >= vertices.len() || i2 >= vertices.len() {
+                    continue;
+                }
+
+                let p0 = vertices[i0];
+                let p1 = vertices[i1];
+                let p2 = vertices[i2];
+                let tri = Triangle::new(p0, p1, p2);
+                let area = tri.surface_area();
+                total_area += area;
+                tri_areas.push(area);
+                triangles.push(tri);
+
+                let mut n = if has_normals {
+                    normals[i0] + normals[i1] + normals[i2]
+                } else {
+                    Vector3f::new(0.0, 0.0, 0.0)
+                };
+                if n.norm() > 0.0 {
+                    n = n.normalize();
+                } else {
+                    n = (p1 - p0).cross(&(p2 - p0)).normalize();
+                }
+                tri_normals.push(n);
+
+                if has_uv {
+                    tri_uv_indices.push([Some(i0), Some(i1), Some(i2)]);
+                } else {
+                    tri_uv_indices.push([None, None, None]);
+                }
+            }
+        }
+
+        let mut mesh = Self {
+            vertices,
+            normals,
+            uvs,
+            triangles,
+            tri_areas,
+            total_area,
+            tri_normals,
+            tri_uv_indices,
+            bvh: None,
+        };
+        mesh.build_bvh();
+        Ok(mesh)
+    }
+
     pub fn apply_transform(&mut self, scale: &Vector3f, translate: &Vector3f) {
         for v in &mut self.vertices {
             *v = v.component_mul(scale) + translate;
@@ -102,6 +250,29 @@ impl TriangleMesh {
 
         for tri in &mut self.triangles {
             tri.apply_transform(scale, translate);
+        }
+
+        self.tri_normals.clear();
+        self.tri_areas.clear();
+        self.total_area = 0.0;
+        for tri in &self.triangles {
+            let n = tri.geometric_normal();
+            self.tri_normals.push(n);
+            let area = tri.surface_area();
+            self.tri_areas.push(area);
+            self.total_area += area;
+        }
+
+        self.build_bvh();
+    }
+
+    pub fn apply_transform_matrix(&mut self, transform: &Transform) {
+        for v in &mut self.vertices {
+            *v = transform.apply_point(*v);
+        }
+
+        for tri in &mut self.triangles {
+            tri.apply_transform_matrix(transform);
         }
 
         self.tri_normals.clear();
@@ -141,6 +312,42 @@ impl TriangleMesh {
         let uv1 = indices[1].and_then(|i| self.uvs.get(i)).cloned().unwrap_or(Vector2f::new(0.0, 0.0));
         let uv2 = indices[2].and_then(|i| self.uvs.get(i)).cloned().unwrap_or(Vector2f::new(0.0, 0.0));
         uv0 * bary.x + uv1 * bary.y + uv2 * bary.z
+    }
+}
+
+fn ply_prop_f32(elem: &DefaultElement, name: &str) -> Option<Float> {
+    elem.get(name).and_then(ply_property_f32)
+}
+
+fn ply_property_f32(prop: &Property) -> Option<Float> {
+    match prop {
+        Property::Float(v) => Some(*v),
+        Property::Double(v) => Some(*v as Float),
+        Property::Int(v) => Some(*v as Float),
+        Property::UInt(v) => Some(*v as Float),
+        Property::Short(v) => Some(*v as Float),
+        Property::UShort(v) => Some(*v as Float),
+        Property::Char(v) => Some(*v as Float),
+        Property::UChar(v) => Some(*v as Float),
+        _ => None,
+    }
+}
+
+fn ply_prop_indices(elem: &DefaultElement, name: &str) -> Option<Vec<usize>> {
+    elem.get(name).and_then(ply_property_indices)
+}
+
+fn ply_property_indices(prop: &Property) -> Option<Vec<usize>> {
+    match prop {
+        Property::ListInt(v) => Some(v.iter().filter_map(|x| if *x >= 0 { Some(*x as usize) } else { None }).collect()),
+        Property::ListUInt(v) => Some(v.iter().map(|x| *x as usize).collect()),
+        Property::ListShort(v) => Some(v.iter().filter_map(|x| if *x >= 0 { Some(*x as usize) } else { None }).collect()),
+        Property::ListUShort(v) => Some(v.iter().map(|x| *x as usize).collect()),
+        Property::ListChar(v) => Some(v.iter().filter_map(|x| if *x >= 0 { Some(*x as usize) } else { None }).collect()),
+        Property::ListUChar(v) => Some(v.iter().map(|x| *x as usize).collect()),
+        Property::ListFloat(v) => Some(v.iter().map(|x| *x as usize).collect()),
+        Property::ListDouble(v) => Some(v.iter().map(|x| *x as usize).collect()),
+        _ => None,
     }
 }
 

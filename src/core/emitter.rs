@@ -47,6 +47,9 @@ pub trait Emitter: Send + Sync {
     fn new() -> Self where Self: Sized;
     fn get_flag(&self) -> EmitterFlag;
     fn set_scene_bounds(&mut self, _bounds: &AABB) {}
+    fn eval_direction(&self, _direction: &Vector3f) -> RGBSpectrum {
+        RGBSpectrum::default()
+    }
     fn sample_position(&self, u: &Vector2f) -> SurfaceSampleRecord;
     fn sample_direction(&self, u: &Vector2f, position: &SurfaceIntersection) -> Vector3f;
     fn pdf_position(&self, position: &SurfaceIntersection) -> Float;
