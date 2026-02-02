@@ -9,6 +9,7 @@ mod io;
 mod integrators;
 mod materials;
 mod math;
+mod emitters;
 mod renderers;
 mod sensors;
 mod shapes;

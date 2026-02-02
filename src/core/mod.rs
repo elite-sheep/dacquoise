@@ -3,6 +3,7 @@
 pub mod bsdf;
 pub mod bvh;
 pub mod computation_node;
+pub mod emitter;
 pub mod integrator;
 pub mod interaction;
 pub mod sensor;

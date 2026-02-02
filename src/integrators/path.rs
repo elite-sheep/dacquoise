@@ -6,6 +6,7 @@ use crate::core::scene::Scene;
 use crate::core::sensor::Sensor;
 use crate::core::tangent_frame::{build_tangent_frame, local_to_world, world_to_local};
 use crate::core::bsdf::BSDFSampleRecord;
+use crate::core::emitter::EmitterSample;
 use crate::math::constants::{Float, Vector2f, Vector3f};
 use crate::math::ray::Ray3f;
 use crate::math::spectrum::{RGBSpectrum, Spectrum};
@@ -43,7 +44,16 @@ impl Integrator for PathIntegrator {
         for bounce in 0..self.max_depth {
             let intersection = match scene.ray_intersection(&ray) {
                 Some(h) => h,
-                None => break,
+                None => {
+                    let mut env = RGBSpectrum::default();
+                    for emitter in scene.emitters() {
+                        env += emitter.eval_direction(&ray.dir());
+                    }
+                    if env.is_black() == false {
+                        radiance += throughput.component_mul(&Vector3f::new(env[0], env[1], env[2]));
+                    }
+                    break;
+                }
             };
 
             let le = intersection.le();
@@ -78,43 +88,82 @@ impl Integrator for PathIntegrator {
                 None => break,
             };
 
+
             // Next Event Estimation (direct lighting), skip if this is the last bounce
             if bounce + 1 < self.max_depth {
                 if let Some(light_sample) = scene.sample_emitter(
                     rng.next_f32(),
                     &Vector2f::new(rng.next_f32(), rng.next_f32()),
                 ) {
-                    let light_intersection = light_sample.intersection();
-                    let light_le = light_intersection.le();
-                    if light_le.is_black() == false {
-                        let p = intersection.p();
-                        let p_light = light_intersection.p();
-                        let to_light = p_light - p;
-                        let dist2 = to_light.dot(&to_light);
-                        if dist2 > 0.0 {
-                            let dist = dist2.sqrt();
-                            let wo_world = to_light / dist;
-                            let cos_light = light_intersection.geo_normal().dot(&(-wo_world)).max(0.0);
+                    match light_sample {
+                        EmitterSample::Surface(light_sample) => {
+                            let light_intersection = light_sample.intersection();
+                            let light_le = light_intersection.le();
+                            if light_le.is_black() == false {
+                                let p = intersection.p();
+                                let p_light = light_intersection.p();
+                                let to_light = p_light - p;
+                                let dist2 = to_light.dot(&to_light);
+                                if dist2 > 0.0 {
+                                    let dist = dist2.sqrt();
+                                    let wo_world = to_light / dist;
+                                    let cos_light = light_intersection.geo_normal().dot(&(-wo_world)).max(0.0);
 
-                            if cos_light > 0.0 {
+                                    if cos_light > 0.0 {
+                                        let shadow_ray = Ray3f::new(
+                                            p + n * 1e-3,
+                                            wo_world,
+                                            Some(1e-3),
+                                            None,
+                                        );
+
+                                        let shadow_hit = scene.ray_intersection(&shadow_ray);
+                                        let is_occluded = match shadow_hit {
+                                            Some(ref h) => {
+                                                let hit_p = h.p();
+                                                let near_light = (hit_p - p_light).norm() < 1e-3;
+                                                !near_light && h.t() < dist - 1e-3
+                                            }
+                                            None => false,
+                                        };
+
+                                        if !is_occluded {
+                                            let wo_local = world_to_local(&wo_world, &tangent, &bitangent, &n);
+                                            let mut eval_record = BSDFSampleRecord::default();
+                                            eval_record.wi = wi_local;
+                                            eval_record.wo = wo_local;
+                                            eval_record.pdf = 0.0;
+                                            eval_record.uv = intersection.uv();
+                                            let eval = material.eval(eval_record);
+                                            let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
+                                            let cos_theta = wo_local.z.abs();
+
+                                            let light_pdf_area = light_sample.pdf();
+                                            let light_pdf = light_pdf_area * dist2 / cos_light;
+                                            if light_pdf > 0.0 {
+                                                let bsdf_pdf = eval.pdf.max(0.0);
+                                                let weight = power_heuristic(light_pdf, bsdf_pdf);
+                                                let le_vec = Vector3f::new(light_le[0], light_le[1], light_le[2]);
+                                                let contrib = throughput.component_mul(&f) * (cos_theta / light_pdf) * weight;
+                                                let direct = contrib.component_mul(&le_vec);
+                                                radiance += direct;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        EmitterSample::Direction { direction, irradiance, pdf, is_delta } => {
+                            let dir_len = direction.norm();
+                            if dir_len > 0.0 && pdf > 0.0 && !irradiance.is_black() {
+                                let wo_world = direction / dir_len;
                                 let shadow_ray = Ray3f::new(
-                                    p + n * 1e-3,
+                                    intersection.p() + n * 1e-3,
                                     wo_world,
                                     Some(1e-3),
                                     None,
                                 );
-
-                                let shadow_hit = scene.ray_intersection(&shadow_ray);
-                                let is_occluded = match shadow_hit {
-                                    Some(ref h) => {
-                                        let hit_p = h.p();
-                                        let near_light = (hit_p - p_light).norm() < 1e-3;
-                                        !near_light && h.t() < dist - 1e-3
-                                    }
-                                    None => false,
-                                };
-
-                                if !is_occluded {
+                                if !scene.ray_intersection_t(&shadow_ray) {
                                     let wo_local = world_to_local(&wo_world, &tangent, &bitangent, &n);
                                     let mut eval_record = BSDFSampleRecord::default();
                                     eval_record.wi = wi_local;
@@ -124,16 +173,12 @@ impl Integrator for PathIntegrator {
                                     let eval = material.eval(eval_record);
                                     let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
                                     let cos_theta = wo_local.z.abs();
-
-                                    let light_pdf_area = light_sample.pdf();
-                                    let light_pdf = light_pdf_area * dist2 / cos_light;
-                                    if light_pdf > 0.0 {
+                                    if cos_theta > 0.0 {
                                         let bsdf_pdf = eval.pdf.max(0.0);
-                                        let weight = power_heuristic(light_pdf, bsdf_pdf);
-                                        let le_vec = Vector3f::new(light_le[0], light_le[1], light_le[2]);
-                                        let contrib = throughput.component_mul(&f) * (cos_theta / light_pdf) * weight;
-                                        let direct = contrib.component_mul(&le_vec);
-                                        radiance += direct;
+                                        let weight = if is_delta { 1.0 } else { power_heuristic(pdf, bsdf_pdf) };
+                                        let le_vec = Vector3f::new(irradiance[0], irradiance[1], irradiance[2]);
+                                        let contrib = throughput.component_mul(&f) * (cos_theta / pdf) * weight;
+                                        radiance += contrib.component_mul(&le_vec);
                                     }
                                 }
                             }
@@ -149,6 +194,7 @@ impl Integrator for PathIntegrator {
                 u1,
                 u2,
                 wi_local,
+                intersection.uv(),
                 intersection.p(),
                 n,
                 &tangent,
@@ -199,12 +245,14 @@ fn compute_scatter_ray(
     u1: Vector2f,
     u2: Vector2f,
     wi_local: Vector3f,
+    uv: Vector2f,
     p: Vector3f,
     n: Vector3f,
     tangent: &Vector3f,
     bitangent: &Vector3f,
 ) -> Option<(Ray3f, Vector3f, Float)> {
-    let sample = material.sample(u1, u2, wi_local);
+    let mut sample = material.sample(u1, u2, wi_local);
+    sample.uv = uv;
     let pdf = sample.pdf;
     if pdf <= 0.0 {
         return None;

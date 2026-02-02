@@ -155,6 +155,12 @@ impl Triangle {
         Vector3f::new(u, v, w)
     }
 
+    pub fn apply_transform_matrix(&mut self, transform: &crate::math::transform::Transform) {
+        self.p0 = transform.apply_point(self.p0);
+        self.p1 = transform.apply_point(self.p1);
+        self.p2 = transform.apply_point(self.p2);
+    }
+
     pub fn apply_transform(&mut self, scale: &Vector3f, translate: &Vector3f) {
         self.p0 = self.p0.component_mul(scale) + translate;
         self.p1 = self.p1.component_mul(scale) + translate;

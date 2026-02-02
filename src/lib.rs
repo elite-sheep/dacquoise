@@ -10,3 +10,4 @@ pub mod textures;
 pub mod integrators;
 pub mod materials;
 pub mod shapes;
+pub mod emitters;

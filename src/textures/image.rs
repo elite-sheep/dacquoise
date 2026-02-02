@@ -15,6 +15,14 @@ pub struct ImageTexture {
 }
 
 impl ImageTexture {
+    pub fn from_rgb(r: Float, g: Float, b: Float) -> Self {
+        Self {
+            width: 1,
+            height: 1,
+            data: vec![(r, g, b)],
+        }
+    }
+
     pub fn from_exr(path: &str) -> std::result::Result<Self, String> {
         let image = read()
             .no_deep_data()
@@ -75,6 +83,56 @@ impl ImageTexture {
         }
     }
 
+    pub fn dimensions(&self) -> (usize, usize) {
+        (self.width, self.height)
+    }
+
+    fn sample_bilinear(&self, uv: Vector2f) -> RGBSpectrum {
+        if self.width == 0 || self.height == 0 {
+            return RGBSpectrum::default();
+        }
+
+        let mut u = uv.x.fract();
+        let mut v = uv.y.fract();
+        if u < 0.0 { u += 1.0; }
+        if v < 0.0 { v += 1.0; }
+
+        let x = u * (self.width as Float - 1.0);
+        let y = (1.0 - v) * (self.height as Float - 1.0);
+
+        let x0 = x.floor() as usize;
+        let y0 = y.floor() as usize;
+        let x1 = (x0 + 1) % self.width;
+        let y1 = (y0 + 1) % self.height;
+
+        let tx = x - x0 as Float;
+        let ty = y - y0 as Float;
+
+        let idx00 = y0 * self.width + x0;
+        let idx10 = y0 * self.width + x1;
+        let idx01 = y1 * self.width + x0;
+        let idx11 = y1 * self.width + x1;
+
+        let (r00, g00, b00) = self.data[idx00];
+        let (r10, g10, b10) = self.data[idx10];
+        let (r01, g01, b01) = self.data[idx01];
+        let (r11, g11, b11) = self.data[idx11];
+
+        let r0 = r00 * (1.0 - tx) + r10 * tx;
+        let g0 = g00 * (1.0 - tx) + g10 * tx;
+        let b0 = b00 * (1.0 - tx) + b10 * tx;
+
+        let r1 = r01 * (1.0 - tx) + r11 * tx;
+        let g1 = g01 * (1.0 - tx) + g11 * tx;
+        let b1 = b01 * (1.0 - tx) + b11 * tx;
+
+        let r = r0 * (1.0 - ty) + r1 * ty;
+        let g = g0 * (1.0 - ty) + g1 * ty;
+        let b = b0 * (1.0 - ty) + b1 * ty;
+
+        RGBSpectrum::new(r, g, b)
+    }
+
     fn sample_nearest(&self, uv: Vector2f) -> RGBSpectrum {
         if self.width == 0 || self.height == 0 {
             return RGBSpectrum::default();
@@ -95,6 +153,6 @@ impl ImageTexture {
 
 impl Texture for ImageTexture {
     fn eval(&self, uv: Vector2f) -> RGBSpectrum {
-        self.sample_nearest(uv)
+        self.sample_bilinear(uv)
     }
 }
