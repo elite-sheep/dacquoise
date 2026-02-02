@@ -75,6 +75,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut up: Option<Vector3f> = None;
     let mut near_clip: Option<Float> = None;
     let mut far_clip: Option<Float> = None;
+    let mut fov_axis: Option<String> = None;
     let mut width: Option<usize> = None;
     let mut height: Option<usize> = None;
     let mut max_depth: Option<u32> = None;
@@ -358,6 +359,9 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             }
                         }
                         if let (Some(name_attr), Some(value_attr)) = (name_attr, value_attr) {
+                            if in_sensor && name_attr == "fov_axis" {
+                                fov_axis = Some(value_attr.clone());
+                            }
                             if in_texture && name_attr == "filename" {
                                 current_texture_filename = Some(value_attr.clone());
                             }
@@ -476,7 +480,8 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             let height = height.ok_or(SceneLoadError::MissingField("film.height"))?;
 
                             let aspect = width as Float / height as Float;
-                            let fov_rad = fov_deg * std::f32::consts::PI / 180.0;
+                            let axis = fov_axis.as_deref().unwrap_or("x");
+                            let fov_rad = fov_y_from_axis(fov_deg, axis, width, height)?;
                             let camera = PerspectiveCamera::new(
                                 origin,
                                 target,
@@ -485,8 +490,8 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 aspect,
                                 width,
                                 height,
-                                near_clip.unwrap_or(0.0),
-                                far_clip.unwrap_or(std::f32::MAX),
+                                near_clip.unwrap_or(1e-2),
+                                far_clip.unwrap_or(1e4),
                             );
                             scene.add_sensor(Box::new(camera));
                         }
@@ -500,6 +505,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         up = None;
                         near_clip = None;
                         far_clip = None;
+                        fov_axis = None;
                         width = None;
                         height = None;
                     }
@@ -664,4 +670,34 @@ fn parse_vec3(value: &str) -> Result<Vector3f, SceneLoadError> {
 fn parse_vec3_spectrum(value: &str) -> Result<RGBSpectrum, SceneLoadError> {
     let v = parse_vec3(value)?;
     Ok(RGBSpectrum::new(v.x, v.y, v.z))
+}
+
+fn fov_y_from_axis(fov_deg: Float, axis: &str, width: usize, height: usize) -> Result<Float, SceneLoadError> {
+    let fov_rad = fov_deg * std::f32::consts::PI / 180.0;
+    let aspect = width as Float / height as Float;
+    let tan_half = (0.5 * fov_rad).tan();
+    let axis = axis.trim().to_lowercase();
+    let tan_half_y = match axis.as_str() {
+        "x" => tan_half / aspect,
+        "y" => tan_half,
+        "diagonal" => tan_half / (aspect * aspect + 1.0).sqrt(),
+        "smaller" => {
+            if width < height {
+                tan_half / aspect
+            } else {
+                tan_half
+            }
+        }
+        "larger" => {
+            if width < height {
+                tan_half
+            } else {
+                tan_half / aspect
+            }
+        }
+        _ => {
+            return Err(SceneLoadError::Parse(format!("invalid fov_axis: {}", axis)));
+        }
+    };
+    Ok(2.0 * tan_half_y.atan())
 }

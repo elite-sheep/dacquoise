@@ -155,13 +155,19 @@ impl Scene {
     pub fn build_bvh(&mut self) {
         let mut prim_bounds = Vec::with_capacity(self.objects.len());
         let mut prim_centroids = Vec::with_capacity(self.objects.len());
+        let mut scene_bounds = crate::math::aabb::AABB::default();
         for obj in &self.objects {
             let bounds = obj.shape.bounding_box();
             prim_centroids.push(bounds.center());
             prim_bounds.push(bounds);
+            scene_bounds.expand_by_aabb(&bounds);
         }
 
         self.bvh = Some(BVH::new(prim_bounds, prim_centroids));
+
+        for emitter in &mut self.emitters {
+            emitter.set_scene_bounds(&scene_bounds);
+        }
     }
 
     fn emitters_from_objects(objects: &[SceneObject]) -> Vec<Box<dyn Emitter>> {
@@ -214,15 +220,19 @@ impl Scene {
         let select_pdf = 1.0 / emitter_count;
         let flag = emitter.get_flag();
         if flag.contains(EmitterFlag::DIRECTION) {
-                let sample = emitter.sample_position(u2);
-                let direction = emitter.sample_direction(u2, sample.intersection());
-                let pdf = emitter.pdf_direction(sample.intersection(), &direction) * select_pdf;
-                Some(EmitterSample::Direction {
-                    direction,
-                    irradiance: sample.intersection().le(),
-                    pdf,
-                    is_delta: flag.contains(EmitterFlag::DELTA),
-                })
+            let sample = emitter.sample_position(u2);
+            let direction = emitter.sample_direction(u2, sample.intersection());
+            let pdf = if flag.contains(EmitterFlag::DELTA) {
+                select_pdf
+            } else {
+                emitter.pdf_direction(sample.intersection(), &direction) * select_pdf
+            };
+            Some(EmitterSample::Direction {
+                direction,
+                irradiance: sample.intersection().le(),
+                pdf,
+                is_delta: flag.contains(EmitterFlag::DELTA),
+            })
         } else if flag.contains(EmitterFlag::SURFACE) {
             let mut sample = emitter.sample_position(u2);
             let pdf = sample.pdf() * select_pdf;

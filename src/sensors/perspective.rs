@@ -50,10 +50,15 @@ impl Sensor for PerspectiveCamera {
         let px = (2.0 * u.x - 1.0) * self.aspect * self.tan_half_fov_y;
         let py = (1.0 - 2.0 * u.y) * self.tan_half_fov_y;
 
-        let p_camera = Vector3f::new(px, py, 1.0);
-        let p_world = self.origin + self.right * p_camera.x + self.up * p_camera.y + self.forward * p_camera.z;
-        let dir = (p_world - self.origin).normalize();
-        Ray3f::new(self.origin, dir, Some(self.near_clip), Some(self.far_clip))
+        let d_camera = Vector3f::new(px, py, 1.0).normalize();
+        let dir = (self.right * d_camera.x + self.up * d_camera.y + self.forward * d_camera.z).normalize();
+
+        let inv_z = if d_camera.z != 0.0 { 1.0 / d_camera.z } else { std::f32::MAX };
+        let near_t = self.near_clip * inv_z;
+        let far_t = self.far_clip * inv_z;
+        let origin = self.origin + dir * near_t;
+        let max_t = far_t - near_t;
+        Ray3f::new(origin, dir, Some(0.0), Some(max_t))
     }
 
     fn bitmap(&self) -> &Bitmap {
