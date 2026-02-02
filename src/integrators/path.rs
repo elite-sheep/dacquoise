@@ -47,7 +47,7 @@ impl Integrator for PathIntegrator {
                 None => {
                     let mut env = RGBSpectrum::default();
                     for emitter in scene.emitters() {
-                        env += emitter.eval_direction(&(-ray.dir()));
+                        env += emitter.eval_direction(&ray.dir());
                     }
                     if env.is_black() == false {
                         radiance += throughput.component_mul(&Vector3f::new(env[0], env[1], env[2]));

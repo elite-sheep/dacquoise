@@ -7,14 +7,17 @@ use crate::math::aabb::AABB;
 use crate::math::constants::{Float, Vector2f, Vector3f, PI};
 use crate::math::spectrum::{RGBSpectrum, Spectrum};
 use crate::math::warp::sample_uniform_disk_concentric;
+use crate::math::transform::Transform;
 use crate::core::texture::Texture;
 use crate::textures::image::ImageTexture;
 
 pub struct EnvMap {
     texture: ImageTexture,
     scale: Float,
+    to_world: Transform,
     width: usize,
     height: usize,
+    cdf_width: usize,
     row_cdf: Vec<Float>,
     col_cdf: Vec<Vec<Float>>,
     total_weight: Float,
@@ -33,10 +36,12 @@ impl EnvMap {
         let mut emitter = Self {
             texture,
             scale,
+            to_world: Transform::default(),
             width,
             height,
+            cdf_width: width + 1,
             row_cdf: vec![0.0; height + 1],
-            col_cdf: vec![vec![0.0; width + 1]; height],
+            col_cdf: vec![vec![0.0; width + 2]; height],
             total_weight: 0.0,
             bsphere_center: Vector3f::zeros(),
             bsphere_radius: 1.0,
@@ -45,16 +50,25 @@ impl EnvMap {
         Ok(emitter)
     }
 
+    pub fn set_transform(&mut self, to_world: Transform) {
+        self.to_world = to_world;
+    }
+
     fn build_distribution(&mut self) {
         let mut total = 0.0;
+        let offset = 0.5 / (self.width as Float);
         for y in 0..self.height {
             let v = (y as Float + 0.5) / (self.height as Float);
             let theta = v * PI;
             let sin_theta = theta.sin();
             let mut row_sum = 0.0;
-            for x in 0..self.width {
-                let u = (x as Float + 0.5) / (self.width as Float);
-                let rgb = self.eval_radiance(Vector2f::new(u, v));
+            for x in 0..self.cdf_width {
+                let u_warp = (x as Float + 0.5) / (self.cdf_width as Float);
+                let mut u_eval = u_warp + offset;
+                if u_eval >= 1.0 {
+                    u_eval -= 1.0;
+                }
+                let rgb = self.eval_radiance(Vector2f::new(u_eval, v));
                 let lum = rgb.value();
                 let weight = lum * sin_theta;
                 row_sum += weight;
@@ -83,7 +97,7 @@ impl EnvMap {
         let row_weight = (self.row_cdf[y + 1] - self.row_cdf[y]).max(1e-8);
         let target_col = u.y * row_weight;
         let mut x = 0usize;
-        for i in 0..self.width {
+        for i in 0..self.cdf_width {
             if self.col_cdf[y][i + 1] >= target_col {
                 x = i;
                 break;
@@ -91,12 +105,16 @@ impl EnvMap {
         }
 
         let weight = (self.col_cdf[y][x + 1] - self.col_cdf[y][x]).max(0.0);
-        let u_coord = (x as Float + 0.5) / (self.width as Float);
+        let mut u_coord = (x as Float + 0.5) / (self.cdf_width as Float);
+        u_coord += 0.5 / (self.width as Float);
+        if u_coord >= 1.0 {
+            u_coord -= 1.0;
+        }
         let v_coord = (y as Float + 0.5) / (self.height as Float);
 
         let theta = v_coord * PI;
         let sin_theta = theta.sin().max(1e-8);
-        let pixel_area = 1.0 / (self.width as Float * self.height as Float);
+        let pixel_area = 1.0 / (self.cdf_width as Float * self.height as Float);
         let pdf_uv = if weight > 0.0 {
             (weight / self.total_weight) / pixel_area
         } else {
@@ -134,6 +152,26 @@ impl EnvMap {
         let uv_tex = Vector2f::new(uv.x, 1.0 - uv.y);
         self.texture.eval(uv_tex) * self.scale
     }
+
+    fn world_dir_from_local(&self, local: Vector3f) -> Vector3f {
+        let dir = self.to_world.apply_vector(local);
+        let len = dir.norm();
+        if len > 0.0 {
+            dir / len
+        } else {
+            dir
+        }
+    }
+
+    fn local_dir_from_world(&self, world: &Vector3f) -> Option<Vector3f> {
+        let dir = self.to_world.inv_apply_vector(*world);
+        let len = dir.norm();
+        if len > 0.0 {
+            Some(dir / len)
+        } else {
+            None
+        }
+    }
 }
 
 impl Emitter for EnvMap {
@@ -142,10 +180,12 @@ impl Emitter for EnvMap {
         Self {
             texture,
             scale: 1.0,
+            to_world: Transform::default(),
             width: 1,
             height: 1,
+            cdf_width: 2,
             row_cdf: vec![0.0, 1.0],
-            col_cdf: vec![vec![0.0, 1.0]],
+            col_cdf: vec![vec![0.0, 1.0, 1.0]],
             total_weight: 1.0,
             bsphere_center: Vector3f::zeros(),
             bsphere_radius: 1.0,
@@ -169,11 +209,10 @@ impl Emitter for EnvMap {
     }
 
     fn eval_direction(&self, direction: &Vector3f) -> RGBSpectrum {
-        let dir_len = direction.norm();
-        if dir_len <= 0.0 {
-            return RGBSpectrum::default();
-        }
-        let dir = direction / dir_len;
+        let dir = match self.local_dir_from_world(direction) {
+            Some(dir) => dir,
+            None => return RGBSpectrum::default(),
+        };
         let uv = self.uv_from_direction(&dir);
         self.eval_radiance(uv)
     }
@@ -182,7 +221,8 @@ impl Emitter for EnvMap {
         let (uv, _pdf) = self.sample_uv(u);
         let le = self.eval_radiance(uv);
 
-        let dir = self.direction_from_uv(uv);
+        let dir_local = self.direction_from_uv(uv);
+        let dir = self.world_dir_from_local(dir_local);
         let (tangent, bitangent) = build_tangent_frame(&dir);
         let disk = sample_uniform_disk_concentric(u);
         let perp_offset = tangent * disk.x + bitangent * disk.y;
@@ -194,7 +234,8 @@ impl Emitter for EnvMap {
 
     fn sample_direction(&self, u: &Vector2f, _position: &SurfaceIntersection) -> Vector3f {
         let (uv, _pdf) = self.sample_uv(u);
-        self.direction_from_uv(uv)
+        let dir_local = self.direction_from_uv(uv);
+        self.world_dir_from_local(dir_local)
     }
 
     fn pdf_position(&self, _position: &SurfaceIntersection) -> Float {
@@ -205,20 +246,37 @@ impl Emitter for EnvMap {
         if self.total_weight <= 0.0 {
             return 0.0;
         }
-        let dir_len = direction.norm();
-        if dir_len <= 0.0 {
-            return 0.0;
-        }
-        let dir = direction / dir_len;
+        let dir = match self.local_dir_from_world(direction) {
+            Some(dir) => dir,
+            None => return 0.0,
+        };
         let uv = self.uv_from_direction(&dir);
-        let lum = self.eval_radiance(uv).value();
+        let mut u_warp = uv.x - 0.5 / (self.width as Float);
+        u_warp = u_warp - u_warp.floor();
+
+        let mut x = (u_warp * self.cdf_width as Float).floor() as usize;
+        let mut y = (uv.y * self.height as Float).floor() as usize;
+        if x >= self.cdf_width {
+            x = self.cdf_width - 1;
+        }
+        if y >= self.height {
+            y = self.height - 1;
+        }
+
+        let weight = (self.col_cdf[y][x + 1] - self.col_cdf[y][x]).max(0.0);
+        let pixel_area = 1.0 / (self.cdf_width as Float * self.height as Float);
+        let pdf_uv = if weight > 0.0 {
+            (weight / self.total_weight) / pixel_area
+        } else {
+            0.0
+        };
+
         let theta = uv.y * PI;
         let sin_theta = theta.sin();
         if sin_theta <= 0.0 {
             return 0.0;
         }
-        let pdf = lum * (self.width as Float) * (self.height as Float)
-            / (self.total_weight * 2.0 * PI * PI);
+        let pdf = pdf_uv / (2.0 * PI * PI * sin_theta);
         pdf.max(0.0)
     }
 }

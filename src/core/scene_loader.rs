@@ -69,6 +69,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut in_film = false;
     let mut in_transform = false;
     let mut in_shape_transform = false;
+    let mut in_emitter_transform = false;
     let mut in_bsdf = false;
     let mut in_shape = false;
     let mut in_emitter = false;
@@ -99,10 +100,9 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut current_emitter_irradiance: Option<RGBSpectrum> = None;
     let mut current_envmap_filename: Option<String> = None;
     let mut current_envmap_scale: Option<Float> = None;
+    let mut current_emitter_transform = Matrix4f::identity();
     let mut current_shape_emissive: bool = false;
     let mut current_shape_id: Option<String> = None;
-    let mut current_shape_translate = Vector3f::new(0.0, 0.0, 0.0);
-    let mut current_shape_scale = Vector3f::new(1.0, 1.0, 1.0);
     let mut current_shape_transform = Matrix4f::identity();
 
     let mut in_texture = false;
@@ -169,6 +169,13 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                     in_shape_transform = name.as_ref() == "to_world";
                                 }
                             }
+                        } else if in_emitter {
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"name" {
+                                    let name = attr.unescape_value().unwrap_or_default();
+                                    in_emitter_transform = name.as_ref() == "to_world";
+                                }
+                            }
                         }
                     }
                     b"lookat" => {
@@ -190,7 +197,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         }
                     }
                     b"translate" => {
-                        if in_shape && in_shape_transform {
+                        if (in_shape && in_shape_transform) || (in_emitter && in_emitter_transform) {
                             let mut x: Float = 0.0;
                             let mut y: Float = 0.0;
                             let mut z: Float = 0.0;
@@ -210,16 +217,20 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 y = v.y;
                                 z = v.z;
                             }
-                            current_shape_translate += Vector3f::new(x, y, z);
                             let mut t = Matrix4f::identity();
                             t[(0, 3)] = x;
                             t[(1, 3)] = y;
                             t[(2, 3)] = z;
-                            current_shape_transform = t * current_shape_transform;
+                            if in_shape && in_shape_transform {
+                                current_shape_transform = t * current_shape_transform;
+                            }
+                            if in_emitter && in_emitter_transform {
+                                current_emitter_transform = t * current_emitter_transform;
+                            }
                         }
                     }
                     b"scale" => {
-                        if in_shape && in_shape_transform {
+                        if (in_shape && in_shape_transform) || (in_emitter && in_emitter_transform) {
                             let mut sx: Option<Float> = None;
                             let mut sy: Option<Float> = None;
                             let mut sz: Option<Float> = None;
@@ -238,16 +249,20 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             } else {
                                 Vector3f::new(sx.unwrap_or(1.0), sy.unwrap_or(1.0), sz.unwrap_or(1.0))
                             };
-                            current_shape_scale = current_shape_scale.component_mul(&s);
                             let mut t = Matrix4f::identity();
                             t[(0, 0)] = s.x;
                             t[(1, 1)] = s.y;
                             t[(2, 2)] = s.z;
-                            current_shape_transform = t * current_shape_transform;
+                            if in_shape && in_shape_transform {
+                                current_shape_transform = t * current_shape_transform;
+                            }
+                            if in_emitter && in_emitter_transform {
+                                current_emitter_transform = t * current_emitter_transform;
+                            }
                         }
                     }
                     b"rotate" => {
-                        if in_shape && in_shape_transform {
+                        if (in_shape && in_shape_transform) || (in_emitter && in_emitter_transform) {
                             let mut axis = Vector3f::new(0.0, 0.0, 0.0);
                             let mut angle: Option<Float> = None;
                             for attr in e.attributes().flatten() {
@@ -265,13 +280,18 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                     let unit = na::Unit::new_normalize(axis);
                                     let rot = na::Rotation3::from_axis_angle(&unit, angle_rad);
                                     let t = rot.to_homogeneous();
-                                    current_shape_transform = t * current_shape_transform;
+                                    if in_shape && in_shape_transform {
+                                        current_shape_transform = t * current_shape_transform;
+                                    }
+                                    if in_emitter && in_emitter_transform {
+                                        current_emitter_transform = t * current_emitter_transform;
+                                    }
                                 }
                             }
                         }
                     }
                     b"matrix" => {
-                        if in_shape && in_shape_transform {
+                        if (in_shape && in_shape_transform) || (in_emitter && in_emitter_transform) {
                             let mut value_attr: Option<String> = None;
                             for attr in e.attributes().flatten() {
                                 if attr.key.as_ref() == b"value" {
@@ -280,7 +300,12 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             }
                             if let Some(value_attr) = value_attr {
                                 let t = parse_matrix4(&value_attr)?;
-                                current_shape_transform = t * current_shape_transform;
+                                if in_shape && in_shape_transform {
+                                    current_shape_transform = t * current_shape_transform;
+                                }
+                                if in_emitter && in_emitter_transform {
+                                    current_emitter_transform = t * current_emitter_transform;
+                                }
                             }
                         }
                     }
@@ -503,8 +528,6 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             current_shape_emissive = false;
                             current_emitter_radiance = None;
                             current_shape_id = shape_id;
-                            current_shape_translate = Vector3f::new(0.0, 0.0, 0.0);
-                            current_shape_scale = Vector3f::new(1.0, 1.0, 1.0);
                             current_shape_transform = Matrix4f::identity();
                         } else {
                             in_shape = false;
@@ -538,6 +561,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             current_emitter_irradiance = None;
                             current_envmap_filename = None;
                             current_envmap_scale = None;
+                            current_emitter_transform = Matrix4f::identity();
                         }
                     }
                     _ => {}
@@ -590,6 +614,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                     b"transform" => {
                         in_transform = false;
                         in_shape_transform = false;
+                        in_emitter_transform = false;
                     }
                     b"texture" => {
                         in_texture = false;
@@ -665,8 +690,9 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                     base_dir.join(filename).to_string_lossy().to_string()
                                 };
                                 let scale = current_envmap_scale.unwrap_or(1.0);
-                                let emitter = EnvMap::from_file(&filename, scale)
+                                let mut emitter = EnvMap::from_file(&filename, scale)
                                     .map_err(|e| SceneLoadError::Parse(e))?;
+                                emitter.set_transform(Transform::new(current_emitter_transform));
                                 scene.add_emitter(Box::new(emitter));
                             }
                         }
@@ -676,6 +702,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         current_emitter_irradiance = None;
                         current_envmap_filename = None;
                         current_envmap_scale = None;
+                        current_emitter_transform = Matrix4f::identity();
                     }
                     b"shape" => {
                         if in_shape {
@@ -741,8 +768,6 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         current_shape_emissive = false;
                         current_emitter_radiance = None;
                         current_shape_id = None;
-                        current_shape_translate = Vector3f::new(0.0, 0.0, 0.0);
-                        current_shape_scale = Vector3f::new(1.0, 1.0, 1.0);
                         current_shape_transform = Matrix4f::identity();
                     }
                     _ => {}
