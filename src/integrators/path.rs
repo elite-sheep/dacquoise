@@ -65,15 +65,9 @@ impl Integrator for PathIntegrator {
                 } else
                 if bounce == 0 {
                     radiance += throughput.component_mul(&Vector3f::new(le[0], le[1], le[2]));
-                } else if let Some(light_pdf_area) = intersection.light_pdf_area() {
-                    let p = intersection.p();
-                    let dist2 = (p - ray.origin()).dot(&(p - ray.origin()));
-                    let cos_light = cos_light_hit.max(0.0);
-                    if cos_light > 0.0 && dist2 > 0.0 {
-                        let light_pdf = light_pdf_area * dist2 / cos_light;
-                        let weight = power_heuristic(prev_bsdf_pdf, light_pdf);
-                        radiance += throughput.component_mul(&Vector3f::new(le[0], le[1], le[2])) * weight;
-                    }
+                } else if let Some(light_pdf) = scene.pdf_light(&intersection, &ray.origin()) {
+                    let weight = power_heuristic(prev_bsdf_pdf, light_pdf);
+                    radiance += throughput.component_mul(&Vector3f::new(le[0], le[1], le[2])) * weight;
                 }
             }
 

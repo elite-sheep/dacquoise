@@ -9,7 +9,7 @@ use crate::core::shape::Shape;
 use crate::emitters::area::AreaEmitter;
 use crate::math::ray::Ray3f;
 use crate::math::spectrum::{RGBSpectrum, Spectrum};
-use crate::math::constants::{ Float, Vector2f };
+use crate::math::constants::{ Float, Vector2f, Vector3f };
 use std::sync::Arc;
 
 pub struct SceneObject {
@@ -192,13 +192,10 @@ impl Scene {
             })
         }) {
             let object = &self.objects[idx];
-            let mut result = hit.with_le(object.emission).with_material(object.material.clone());
-            if !object.emission.is_black() {
-                let area = object.shape.surface_area();
-                if area > 0.0 {
-                    result = result.with_light_pdf_area(Some(1.0 / area.max(1e-6)));
-                }
-            }
+            let result = hit
+                .with_le(object.emission)
+                .with_material(object.material.clone())
+                .with_object_index(Some(idx));
             Some(result)
         } else {
             None
@@ -210,6 +207,36 @@ impl Scene {
         bvh.ray_intersection_t(ray, |prim_idx, ray| {
             self.objects[prim_idx].shape.ray_intersection_t(ray)
         })
+    }
+
+    pub fn pdf_light(&self, intersection: &SurfaceIntersection, ref_p: &Vector3f) -> Option<Float> {
+        let obj_idx = intersection.object_index()?;
+        if self.emitters.is_empty() {
+            return None;
+        }
+        let object = self.objects.get(obj_idx)?;
+        if object.emission.is_black() {
+            return None;
+        }
+        let area = object.shape.surface_area();
+        if area <= 0.0 {
+            return None;
+        }
+
+        let to_light = intersection.p() - *ref_p;
+        let dist2 = to_light.dot(&to_light);
+        if dist2 <= 0.0 {
+            return None;
+        }
+        let dir = to_light / dist2.sqrt();
+        let cos_light = intersection.geo_normal().dot(&(-dir)).max(0.0);
+        if cos_light <= 0.0 {
+            return None;
+        }
+
+        let select_pdf = 1.0 / (self.emitters.len() as Float);
+        let area_pdf = 1.0 / area.max(1e-6);
+        Some(area_pdf * select_pdf * dist2 / cos_light)
     }
 
     pub fn sample_emitter(&self, u1: Float, u2: &Vector2f) -> Option<EmitterSample> {
