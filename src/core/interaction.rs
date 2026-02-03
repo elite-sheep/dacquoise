@@ -54,6 +54,10 @@ impl SurfaceIntersection {
         self.geo_normal
     }
 
+    pub fn sh_normal(&self) -> Vector3f {
+        self.sh_normal
+    }
+
     pub fn with_le(&self, new_le: RGBSpectrum) -> Self {
         Self {
             p: self.p.clone(),

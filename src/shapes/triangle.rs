@@ -11,6 +11,7 @@ use crate::math::spectrum::RGBSpectrum;
 use crate::math::warp::square_to_triangle;
 
 use std::option::Option;
+use std::any::Any;
 
 pub struct Triangle {
     p0: Vector3f,
@@ -99,6 +100,10 @@ impl Shape for Triangle {
     fn surface_area(&self) -> Float {
         let length = 0.5 * ((self.p1 - self.p0).cross(&(self.p2 - self.p0))).norm();
         length
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

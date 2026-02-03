@@ -192,7 +192,14 @@ impl Scene {
             })
         }) {
             let object = &self.objects[idx];
-            Some(hit.with_le(object.emission).with_material(object.material.clone()))
+            let mut result = hit.with_le(object.emission).with_material(object.material.clone());
+            if !object.emission.is_black() {
+                let area = object.shape.surface_area();
+                if area > 0.0 {
+                    result = result.with_light_pdf_area(Some(1.0 / area.max(1e-6)));
+                }
+            }
+            Some(result)
         } else {
             None
         }
@@ -293,6 +300,10 @@ mod tests {
 
         fn surface_area(&self) -> Float {
             1.0
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
         }
     }
 

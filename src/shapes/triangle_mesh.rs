@@ -20,6 +20,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::BufReader;
 use std::vec::Vec;
+use std::any::Any;
 
 #[derive(Debug)]
 pub enum PlyLoadError {
@@ -55,7 +56,10 @@ pub struct TriangleMesh {
     total_area: Float,
     tri_normals: Vec<Vector3f>,
     tri_uv_indices: Vec<[Option<usize>; 3]>,
+    tri_face_indices: Vec<usize>,
     bvh: Option<BVH>,
+    use_face_normals: bool,
+    source_path: Option<String>,
 }
 
 impl TriangleMesh {
@@ -69,6 +73,7 @@ impl TriangleMesh {
         let mut total_area = 0.0;
         let mut tri_normals = Vec::new();
         let mut tri_uv_indices = Vec::new();
+        let mut tri_face_indices = Vec::new();
 
         for object in obj_set.objects {
             for v in object.vertices {
@@ -83,6 +88,7 @@ impl TriangleMesh {
             for geom in object.geometry {
                 for shape in geom.shapes {
                     if let wavefront_obj::obj::Primitive::Triangle(a, b, c) = shape.primitive {
+                        let tri_index = triangles.len();
                         let p0 = vertices[(a.0) as usize];
                         let p1 = vertices[(b.0) as usize];
                         let p2 = vertices[(c.0) as usize];
@@ -107,6 +113,7 @@ impl TriangleMesh {
                         let uv1 = b.1.map(|i| i as usize);
                         let uv2 = c.1.map(|i| i as usize);
                         tri_uv_indices.push([uv0, uv1, uv2]);
+                        tri_face_indices.push(tri_index);
                     }
                 }
             }
@@ -121,7 +128,10 @@ impl TriangleMesh {
             total_area,
             tri_normals,
             tri_uv_indices,
+            tri_face_indices,
             bvh: None,
+            use_face_normals: false,
+            source_path: Some(path.to_string()),
         };
         mesh.build_bvh();
         Ok(mesh)
@@ -181,8 +191,9 @@ impl TriangleMesh {
         let mut total_area = 0.0;
         let mut tri_normals = Vec::new();
         let mut tri_uv_indices = Vec::new();
+        let mut tri_face_indices = Vec::new();
 
-        for face in faces_payload {
+        for (face_index, face) in faces_payload.iter().enumerate() {
             let indices = ply_prop_indices(face, "vertex_indices")
                 .or_else(|| ply_prop_indices(face, "vertex_index"))
                 .ok_or(PlyLoadError::MissingElement("face.vertex_indices"))?;
@@ -225,6 +236,7 @@ impl TriangleMesh {
                 } else {
                     tri_uv_indices.push([None, None, None]);
                 }
+                tri_face_indices.push(face_index);
             }
         }
 
@@ -237,7 +249,10 @@ impl TriangleMesh {
             total_area,
             tri_normals,
             tri_uv_indices,
+            tri_face_indices,
             bvh: None,
+            use_face_normals: false,
+            source_path: Some(path.to_string()),
         };
         mesh.build_bvh();
         Ok(mesh)
@@ -313,6 +328,88 @@ impl TriangleMesh {
         let uv2 = indices[2].and_then(|i| self.uvs.get(i)).cloned().unwrap_or(Vector2f::new(0.0, 0.0));
         uv0 * bary.x + uv1 * bary.y + uv2 * bary.z
     }
+
+    pub fn set_face_normals(&mut self, use_face_normals: bool) {
+        self.use_face_normals = use_face_normals;
+    }
+
+    pub fn tri_face_index(&self, tri_idx: usize) -> Option<usize> {
+        self.tri_face_indices.get(tri_idx).cloned()
+    }
+
+    pub fn source_path(&self) -> Option<&str> {
+        self.source_path.as_deref()
+    }
+
+    pub fn ray_intersection_with_index(&self, ray: &Ray3f) -> Option<(SurfaceIntersection, usize)> {
+        if let Some(bvh) = &self.bvh {
+            if let Some((idx, hit)) = bvh.ray_intersection(ray, |prim_idx, ray| {
+                self.triangles[prim_idx].ray_intersection(ray).map(|h| {
+                    let t = h.t();
+                    (h, t)
+                })
+            }) {
+                let geo_n = hit.geo_normal();
+                let mut sh_n = if self.use_face_normals {
+                    geo_n
+                } else {
+                    self.tri_normals.get(idx).cloned().unwrap_or(geo_n)
+                };
+                if sh_n.dot(&geo_n) < 0.0 {
+                    sh_n = -sh_n;
+                }
+                let bary = self.triangles[idx].barycentric(&hit.p());
+                let uv = self.tri_uv(idx, bary);
+                let intersection = SurfaceIntersection::new(
+                    hit.p(),
+                    geo_n,
+                    sh_n,
+                    uv,
+                    hit.t(),
+                    RGBSpectrum::default(),
+                    None,
+                    None,
+                );
+                return Some((intersection, idx));
+            }
+            return None;
+        }
+
+        let mut closest_hit: Option<(SurfaceIntersection, usize)> = None;
+        let mut closest_t = std::f32::MAX;
+        for (idx, tri) in self.triangles.iter().enumerate() {
+            if let Some(hit) = tri.ray_intersection(ray) {
+                let hit_t = hit.t();
+                if hit_t < closest_t {
+                    let geo_n = hit.geo_normal();
+                    let mut sh_n = if self.use_face_normals {
+                        geo_n
+                    } else {
+                        self.tri_normals.get(idx).cloned().unwrap_or(geo_n)
+                    };
+                    if sh_n.dot(&geo_n) < 0.0 {
+                        sh_n = -sh_n;
+                    }
+                    let bary = tri.barycentric(&hit.p());
+                    let uv = self.tri_uv(idx, bary);
+                    let intersection = SurfaceIntersection::new(
+                        hit.p(),
+                        geo_n,
+                        sh_n,
+                        uv,
+                        hit_t,
+                        RGBSpectrum::default(),
+                        None,
+                        None,
+                    );
+                    closest_t = hit_t;
+                    closest_hit = Some((intersection, idx));
+                }
+            }
+        }
+
+        closest_hit
+    }
 }
 
 fn ply_prop_f32(elem: &DefaultElement, name: &str) -> Option<Float> {
@@ -372,7 +469,11 @@ impl Shape for TriangleMesh {
                 })
             }) {
                 let geo_n = hit.geo_normal();
-                let mut sh_n = self.tri_normals.get(idx).cloned().unwrap_or(geo_n);
+                let mut sh_n = if self.use_face_normals {
+                    geo_n
+                } else {
+                    self.tri_normals.get(idx).cloned().unwrap_or(geo_n)
+                };
                 if sh_n.dot(&geo_n) < 0.0 {
                     sh_n = -sh_n;
                 }
@@ -395,7 +496,11 @@ impl Shape for TriangleMesh {
                     let hit_t = hit.t();
                     if hit_t < closest_t {
                         let geo_n = hit.geo_normal();
-                        let mut sh_n = self.tri_normals.get(idx).cloned().unwrap_or(geo_n);
+                        let mut sh_n = if self.use_face_normals {
+                            geo_n
+                        } else {
+                            self.tri_normals.get(idx).cloned().unwrap_or(geo_n)
+                        };
                         if sh_n.dot(&geo_n) < 0.0 {
                             sh_n = -sh_n;
                         }
@@ -464,7 +569,11 @@ impl Shape for TriangleMesh {
         let p = p0 * bary.x + p1 * bary.y + p2 * bary.z;
 
         let geo_n = self.triangles[idx].geometric_normal();
-        let mut sh_n = self.tri_normals.get(idx).cloned().unwrap_or(geo_n);
+        let mut sh_n = if self.use_face_normals {
+            geo_n
+        } else {
+            self.tri_normals.get(idx).cloned().unwrap_or(geo_n)
+        };
         if sh_n.dot(&geo_n) < 0.0 {
             sh_n = -sh_n;
         }
@@ -485,5 +594,9 @@ impl Shape for TriangleMesh {
 
     fn surface_area(&self) -> Float {
         self.total_area
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

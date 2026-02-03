@@ -77,11 +77,12 @@ impl Integrator for PathIntegrator {
                 }
             }
 
-            let n = intersection.geo_normal();
-            let (tangent, bitangent) = build_tangent_frame(&n);
+            let n_geo = intersection.geo_normal();
+            let n_sh = intersection.sh_normal();
 
             let wi_world = -ray.dir();
-            let wi_local = world_to_local(&wi_world, &tangent, &bitangent, &n);
+            let (tangent, bitangent) = build_tangent_frame(&n_sh);
+            let wi_local = world_to_local(&wi_world, &tangent, &bitangent, &n_sh);
 
             let material = match intersection.material() {
                 Some(m) => m,
@@ -111,7 +112,7 @@ impl Integrator for PathIntegrator {
 
                                     if cos_light > 0.0 {
                                         let shadow_ray = Ray3f::new(
-                                            p + n * 1e-3,
+                                            p + n_geo * 1e-3,
                                             wo_world,
                                             Some(1e-3),
                                             None,
@@ -128,15 +129,27 @@ impl Integrator for PathIntegrator {
                                         };
 
                                         if !is_occluded {
-                                            let wo_local = world_to_local(&wo_world, &tangent, &bitangent, &n);
+                                            let wo_local = world_to_local(&wo_world, &tangent, &bitangent, &n_sh);
                                             let mut eval_record = BSDFSampleRecord::default();
                                             eval_record.wi = wi_local;
                                             eval_record.wo = wo_local;
                                             eval_record.pdf = 0.0;
                                             eval_record.uv = intersection.uv();
                                             let eval = material.eval(eval_record);
-                                            let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
+                                            let mut f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
                                             let cos_theta = wo_local.z.abs();
+                                            let corr = shading_normal_correction(
+                                                wi_world,
+                                                wo_world,
+                                                wi_local,
+                                                wo_local,
+                                                n_geo,
+                                            );
+                                            if let Some(corr) = corr {
+                                                f *= corr;
+                                            } else {
+                                                continue;
+                                            }
 
                                             let light_pdf_area = light_sample.pdf();
                                             let light_pdf = light_pdf_area * dist2 / cos_light;
@@ -157,22 +170,34 @@ impl Integrator for PathIntegrator {
                             let dir_len = direction.norm();
                             if dir_len > 0.0 && pdf > 0.0 && !irradiance.is_black() {
                                 let wo_world = direction / dir_len;
-                                let shadow_ray = Ray3f::new(
-                                    intersection.p() + n * 1e-3,
-                                    wo_world,
-                                    Some(1e-3),
-                                    None,
-                                );
+                                    let shadow_ray = Ray3f::new(
+                                        intersection.p() + n_geo * 1e-3,
+                                        wo_world,
+                                        Some(1e-3),
+                                        None,
+                                    );
                                 if !scene.ray_intersection_t(&shadow_ray) {
-                                    let wo_local = world_to_local(&wo_world, &tangent, &bitangent, &n);
+                                    let wo_local = world_to_local(&wo_world, &tangent, &bitangent, &n_sh);
                                     let mut eval_record = BSDFSampleRecord::default();
                                     eval_record.wi = wi_local;
                                     eval_record.wo = wo_local;
                                     eval_record.pdf = 0.0;
                                     eval_record.uv = intersection.uv();
                                     let eval = material.eval(eval_record);
-                                    let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
+                                    let mut f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
                                     let cos_theta = wo_local.z.abs();
+                                    let corr = shading_normal_correction(
+                                        wi_world,
+                                        wo_world,
+                                        wi_local,
+                                        wo_local,
+                                        n_geo,
+                                    );
+                                    if let Some(corr) = corr {
+                                        f *= corr;
+                                    } else {
+                                        continue;
+                                    }
                                     if cos_theta > 0.0 {
                                         let bsdf_pdf = eval.pdf.max(0.0);
                                         let weight = if is_delta { 1.0 } else { power_heuristic(pdf, bsdf_pdf) };
@@ -196,7 +221,8 @@ impl Integrator for PathIntegrator {
                 wi_local,
                 intersection.uv(),
                 intersection.p(),
-                n,
+                n_sh,
+                n_geo,
                 &tangent,
                 &bitangent,
             ) {
@@ -241,6 +267,27 @@ fn power_heuristic(pdf_a: Float, pdf_b: Float) -> Float {
     }
 }
 
+fn shading_normal_correction(
+    wi_world: Vector3f,
+    wo_world: Vector3f,
+    wi_local: Vector3f,
+    wo_local: Vector3f,
+    n_geo: Vector3f,
+) -> Option<Float> {
+    let wi_dot_geo = wi_world.dot(&n_geo);
+    let wo_dot_geo = wo_world.dot(&n_geo);
+    let wi_cos = wi_local.z;
+    let wo_cos = wo_local.z;
+    if wi_dot_geo * wi_cos <= 0.0 || wo_dot_geo * wo_cos <= 0.0 {
+        return None;
+    }
+    let denom = wo_cos * wi_dot_geo;
+    if denom.abs() <= 1e-8 {
+        return None;
+    }
+    Some(((wi_cos * wo_dot_geo) / denom).abs())
+}
+
 fn compute_scatter_ray(
     material: &dyn crate::core::bsdf::BSDF,
     u1: Vector2f,
@@ -248,7 +295,8 @@ fn compute_scatter_ray(
     wi_local: Vector3f,
     uv: Vector2f,
     p: Vector3f,
-    n: Vector3f,
+    n_sh: Vector3f,
+    n_geo: Vector3f,
     tangent: &Vector3f,
     bitangent: &Vector3f,
 ) -> Option<(Ray3f, Vector3f, Float)> {
@@ -263,10 +311,26 @@ fn compute_scatter_ray(
     let eval = material.eval(sample);
     let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
     let cos_theta = wo_local.z.abs();
-    let bsdf_weight = f * (cos_theta / pdf);
+    let mut bsdf_weight = f * (cos_theta / pdf);
 
-    let wo_world = local_to_world(&wo_local, tangent, bitangent, &n);
-    let offset_dir = if wo_world.dot(&n) >= 0.0 { n } else { -n };
+    let wi_world = local_to_world(&wi_local, tangent, bitangent, &n_sh);
+    let wo_world = local_to_world(&wo_local, tangent, bitangent, &n_sh);
+
+    let wi_dot_geo = wi_world.dot(&n_geo);
+    let wo_dot_geo = wo_world.dot(&n_geo);
+    let wi_cos = wi_local.z;
+    let wo_cos = wo_local.z;
+    if wi_dot_geo * wi_cos <= 0.0 || wo_dot_geo * wo_cos <= 0.0 {
+        return None;
+    }
+
+    let denom = wo_cos * wi_dot_geo;
+    if denom.abs() > 1e-8 {
+        let correction = (wi_cos * wo_dot_geo / denom).abs();
+        bsdf_weight *= correction;
+    }
+
+    let offset_dir = if wo_world.dot(&n_geo) >= 0.0 { n_geo } else { -n_geo };
     let origin = p + offset_dir * 1e-6;
     Some((Ray3f::new(origin, wo_world, Some(1e-4), None), bsdf_weight, pdf))
 }

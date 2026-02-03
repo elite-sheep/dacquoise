@@ -8,7 +8,7 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 
 use crate::core::scene::Scene;
-use crate::math::constants::{Float, Matrix4f, Vector3f};
+use crate::math::constants::{Float, Matrix3f, Matrix4f, Vector3f};
 use crate::math::transform::Transform;
 use crate::sensors::perspective::PerspectiveCamera;
 use crate::materials::lambertian_diffuse::LambertianDiffuseBSDF;
@@ -19,7 +19,7 @@ use crate::math::spectrum::RGBSpectrum;
 use crate::shapes::rectangle::Rectangle;
 use crate::shapes::triangle_mesh::TriangleMesh;
 use crate::textures::constant::ConstantTexture;
-use crate::textures::image::ImageTexture;
+use crate::textures::image::{FilterMode, ImageTexture, WrapMode};
 use crate::emitters::directional::DirectionalEmitter;
 use crate::emitters::envmap::EnvMap;
 use crate::core::scene::SceneObject;
@@ -35,6 +35,9 @@ struct BsdfTextureState {
     tex_name: Option<String>,
     tex_filename: Option<String>,
     raw: bool,
+    filter_type: Option<String>,
+    wrap_mode: Option<String>,
+    to_uv: Matrix3f,
 }
 
 struct BsdfState {
@@ -128,6 +131,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut in_sensor_transform = false;
     let mut in_shape_transform = false;
     let mut in_emitter_transform = false;
+    let mut in_texture_transform = false;
     let mut bsdf_stack: Vec<BsdfState> = Vec::new();
     let mut in_shape = false;
     let mut in_emitter = false;
@@ -160,6 +164,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut current_shape_emissive: bool = false;
     let mut current_shape_id: Option<String> = None;
     let mut current_shape_transform = Matrix4f::identity();
+    let mut current_shape_face_normals = false;
 
     let mut scene = Scene::new();
     scene.set_base_dir(base_dir.to_path_buf());
@@ -206,6 +211,16 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         in_film = true;
                     }
                     b"transform" => {
+                        if let Some(current_bsdf) = bsdf_stack.last() {
+                            if current_bsdf.texture_active {
+                                for attr in e.attributes().flatten() {
+                                    if attr.key.as_ref() == b"name" {
+                                        let name = attr.unescape_value().unwrap_or_default();
+                                        in_texture_transform = name.as_ref() == "to_uv";
+                                    }
+                                }
+                            }
+                        }
                         if in_sensor {
                             for attr in e.attributes().flatten() {
                                 if attr.key.as_ref() == b"name" {
@@ -283,6 +298,34 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 current_sensor_transform = t * current_sensor_transform;
                             }
                         }
+                        if in_texture_transform {
+                            let mut x: Float = 0.0;
+                            let mut y: Float = 0.0;
+                            let mut value_attr: Option<String> = None;
+                            for attr in e.attributes().flatten() {
+                                match attr.key.as_ref() {
+                                    b"x" => x = parse_float(&attr.unescape_value().unwrap_or_default())?,
+                                    b"y" => y = parse_float(&attr.unescape_value().unwrap_or_default())?,
+                                    b"value" => value_attr = Some(resolve_value(&attr.unescape_value().unwrap_or_default(), &defaults)),
+                                    _ => {}
+                                }
+                            }
+                            if let Some(value_attr) = value_attr {
+                                let v = parse_vec3(&value_attr)?;
+                                x = v.x;
+                                y = v.y;
+                            }
+                            let mut t = Matrix3f::identity();
+                            t[(0, 2)] = x;
+                            t[(1, 2)] = y;
+                            if let Some(current_bsdf) = bsdf_stack.last_mut() {
+                                if current_bsdf.texture_active {
+                                    if let Some(ref mut tex) = current_bsdf.texture {
+                                        tex.to_uv = t * tex.to_uv;
+                                    }
+                                }
+                            }
+                        }
                     }
                     b"scale" => {
                         if (in_shape && in_shape_transform) || (in_emitter && in_emitter_transform) || (in_sensor && in_sensor_transform) {
@@ -318,6 +361,34 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 current_sensor_transform = t * current_sensor_transform;
                             }
                         }
+                        if in_texture_transform {
+                            let mut sx: Option<Float> = None;
+                            let mut sy: Option<Float> = None;
+                            let mut uniform: Option<Float> = None;
+                            for attr in e.attributes().flatten() {
+                                match attr.key.as_ref() {
+                                    b"x" => sx = Some(parse_float(&attr.unescape_value().unwrap_or_default())?),
+                                    b"y" => sy = Some(parse_float(&attr.unescape_value().unwrap_or_default())?),
+                                    b"value" => uniform = Some(parse_float(&attr.unescape_value().unwrap_or_default())?),
+                                    _ => {}
+                                }
+                            }
+                            let s = if let Some(u) = uniform {
+                                Vector3f::new(u, u, u)
+                            } else {
+                                Vector3f::new(sx.unwrap_or(1.0), sy.unwrap_or(1.0), 1.0)
+                            };
+                            let mut t = Matrix3f::identity();
+                            t[(0, 0)] = s.x;
+                            t[(1, 1)] = s.y;
+                            if let Some(current_bsdf) = bsdf_stack.last_mut() {
+                                if current_bsdf.texture_active {
+                                    if let Some(ref mut tex) = current_bsdf.texture {
+                                        tex.to_uv = t * tex.to_uv;
+                                    }
+                                }
+                            }
+                        }
                     }
                     b"rotate" => {
                         if (in_shape && in_shape_transform) || (in_emitter && in_emitter_transform) || (in_sensor && in_sensor_transform) {
@@ -350,6 +421,40 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 }
                             }
                         }
+                        if in_texture_transform {
+                            let mut axis = Vector3f::new(0.0, 0.0, 0.0);
+                            let mut angle: Option<Float> = None;
+                            for attr in e.attributes().flatten() {
+                                match attr.key.as_ref() {
+                                    b"x" => axis.x = parse_float(&attr.unescape_value().unwrap_or_default())?,
+                                    b"y" => axis.y = parse_float(&attr.unescape_value().unwrap_or_default())?,
+                                    b"z" => axis.z = parse_float(&attr.unescape_value().unwrap_or_default())?,
+                                    b"angle" => angle = Some(parse_float(&attr.unescape_value().unwrap_or_default())?),
+                                    _ => {}
+                                }
+                            }
+                            if let Some(angle) = angle {
+                                let mut angle_rad = angle * std::f32::consts::PI / 180.0;
+                                if axis.z < 0.0 {
+                                    angle_rad = -angle_rad;
+                                }
+                                if axis.norm() > 0.0 || axis.z == 0.0 {
+                                    let (c, s) = (angle_rad.cos(), angle_rad.sin());
+                                    let mut t = Matrix3f::identity();
+                                    t[(0, 0)] = c;
+                                    t[(0, 1)] = -s;
+                                    t[(1, 0)] = s;
+                                    t[(1, 1)] = c;
+                                    if let Some(current_bsdf) = bsdf_stack.last_mut() {
+                                        if current_bsdf.texture_active {
+                                            if let Some(ref mut tex) = current_bsdf.texture {
+                                                tex.to_uv = t * tex.to_uv;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     b"matrix" => {
                         if (in_shape && in_shape_transform) || (in_emitter && in_emitter_transform) || (in_sensor && in_sensor_transform) {
@@ -369,6 +474,24 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 }
                                 if in_sensor && in_sensor_transform {
                                     current_sensor_transform = t * current_sensor_transform;
+                                }
+                            }
+                        }
+                        if in_texture_transform {
+                            let mut value_attr: Option<String> = None;
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"value" {
+                                    value_attr = Some(resolve_value(&attr.unescape_value().unwrap_or_default(), &defaults));
+                                }
+                            }
+                            if let Some(value_attr) = value_attr {
+                                let t = parse_matrix3_or_4(&value_attr)?;
+                                if let Some(current_bsdf) = bsdf_stack.last_mut() {
+                                    if current_bsdf.texture_active {
+                                        if let Some(ref mut tex) = current_bsdf.texture {
+                                            tex.to_uv = t * tex.to_uv;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -497,6 +620,9 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                     current_bsdf.sample_visible = parse_bool(&value_attr)?;
                                 }
                             }
+                            if in_shape && name_attr == "face_normals" {
+                                current_shape_face_normals = parse_bool(&value_attr)?;
+                            }
                         }
                     }
                     b"bsdf" => {
@@ -530,6 +656,9 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 tex_name,
                                 tex_filename: None,
                                 raw: false,
+                                filter_type: None,
+                                wrap_mode: None,
+                                to_uv: Matrix3f::identity(),
                             });
                         }
                     }
@@ -558,6 +687,10 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                     if let Some(ref mut tex) = current_bsdf.texture {
                                         if name_attr == "filename" {
                                             tex.tex_filename = Some(value_attr.clone());
+                                        } else if name_attr == "filter_type" {
+                                            tex.filter_type = Some(value_attr.clone());
+                                        } else if name_attr == "wrap_mode" {
+                                            tex.wrap_mode = Some(value_attr.clone());
                                         }
                                     }
                                 } else if name_attr == "distribution" {
@@ -640,6 +773,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             current_emitter_radiance = None;
                             current_shape_id = shape_id;
                             current_shape_transform = Matrix4f::identity();
+                            current_shape_face_normals = false;
                         } else {
                             in_shape = false;
                             current_shape_type = None;
@@ -749,6 +883,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         in_sensor_transform = false;
                         in_shape_transform = false;
                         in_emitter_transform = false;
+                        in_texture_transform = false;
                     }
                     b"texture" => {
                         if let Some(current_bsdf) = bsdf_stack.last_mut() {
@@ -837,6 +972,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                     };
 
                                     let mut mesh = mesh;
+                                    mesh.set_face_normals(current_shape_face_normals);
                                     let transform = Transform::new(current_shape_transform);
                                     mesh.apply_transform_matrix(&transform);
                                     Arc::new(mesh)
@@ -872,6 +1008,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         current_emitter_radiance = None;
                         current_shape_id = None;
                         current_shape_transform = Matrix4f::identity();
+                        current_shape_face_normals = false;
                     }
                     _ => {}
                 }
@@ -913,8 +1050,32 @@ fn build_bsdf(state: BsdfState, base_dir: &Path) -> Result<Arc<dyn BSDF>, SceneL
                     } else {
                         base_dir.join(filename).to_string_lossy().to_string()
                     };
-                    let image = ImageTexture::from_file_with_srgb(&filename, !tex.raw)
+                    let mut image = ImageTexture::from_file_with_srgb(&filename, !tex.raw)
                         .map_err(|e| SceneLoadError::Parse(e))?;
+                    if let Some(filter) = tex.filter_type {
+                        let filter = filter.trim().to_lowercase();
+                        let mode = match filter.as_str() {
+                            "bilinear" => FilterMode::Bilinear,
+                            "nearest" => FilterMode::Nearest,
+                            other => {
+                                return Err(SceneLoadError::Parse(format!("unsupported filter_type: {}", other)));
+                            }
+                        };
+                        image.set_filter_mode(mode);
+                    }
+                    if let Some(wrap) = tex.wrap_mode {
+                        let wrap = wrap.trim().to_lowercase();
+                        let mode = match wrap.as_str() {
+                            "repeat" => WrapMode::Repeat,
+                            "mirror" => WrapMode::Mirror,
+                            "clamp" => WrapMode::Clamp,
+                            other => {
+                                return Err(SceneLoadError::Parse(format!("unsupported wrap_mode: {}", other)));
+                            }
+                        };
+                        image.set_wrap_mode(mode);
+                    }
+                    image.set_uv_transform(tex.to_uv);
                     Arc::new(image) as Arc<dyn crate::core::texture::Texture>
                 } else {
                     let refl = state.reflectance.unwrap_or(RGBSpectrum::new(0.5, 0.5, 0.5));
@@ -1091,6 +1252,41 @@ fn parse_matrix4(value: &str) -> Result<Matrix4f, SceneLoadError> {
         }
     }
     Ok(m)
+}
+
+fn parse_matrix3_or_4(value: &str) -> Result<Matrix3f, SceneLoadError> {
+    let parts: Vec<&str> = value
+        .split(|c| c == ',' || c == ' ' || c == '\t')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    match parts.len() {
+        9 => {
+            let mut m = Matrix3f::identity();
+            for r in 0..3 {
+                for c in 0..3 {
+                    let idx = r * 3 + c;
+                    m[(r, c)] = parse_float(parts[idx])?;
+                }
+            }
+            Ok(m)
+        }
+        16 => {
+            let m4 = parse_matrix4(value)?;
+            let mut m = Matrix3f::identity();
+            m[(0, 0)] = m4[(0, 0)];
+            m[(0, 1)] = m4[(0, 1)];
+            m[(0, 2)] = m4[(0, 3)];
+            m[(1, 0)] = m4[(1, 0)];
+            m[(1, 1)] = m4[(1, 1)];
+            m[(1, 2)] = m4[(1, 3)];
+            m[(2, 0)] = m4[(3, 0)];
+            m[(2, 1)] = m4[(3, 1)];
+            m[(2, 2)] = m4[(3, 3)];
+            Ok(m)
+        }
+        _ => Err(SceneLoadError::Parse("invalid matrix3 or matrix4".to_string())),
+    }
 }
 
 fn parse_vec3_spectrum(value: &str) -> Result<RGBSpectrum, SceneLoadError> {
