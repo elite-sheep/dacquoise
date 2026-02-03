@@ -98,8 +98,8 @@ impl PlyType {
 
 #[derive(Clone, Debug)]
 enum PlyProperty {
-    Scalar { ty: PlyType, name: String },
-    List { count_ty: PlyType, item_ty: PlyType, name: String },
+    Scalar { ty: PlyType, _name: String },
+    List { count_ty: PlyType, item_ty: PlyType, _name: String },
 }
 
 #[derive(Clone, Debug)]
@@ -166,7 +166,7 @@ fn read_ply_header<R: BufRead>(reader: &mut R) -> std::result::Result<PlyHeader,
                             .ok_or_else(|| format!("unsupported ply property type {}", parts[1]))?;
                         elem.properties.push(PlyProperty::Scalar {
                             ty,
-                            name: parts[2].to_string(),
+                            _name: parts[2].to_string(),
                         });
                     } else if parts.len() >= 5 && parts[1] == "list" {
                         let count_ty = PlyType::from_str(parts[2])
@@ -176,7 +176,7 @@ fn read_ply_header<R: BufRead>(reader: &mut R) -> std::result::Result<PlyHeader,
                         elem.properties.push(PlyProperty::List {
                             count_ty,
                             item_ty,
-                            name: parts[4].to_string(),
+                            _name: parts[4].to_string(),
                         });
                     }
                 }
