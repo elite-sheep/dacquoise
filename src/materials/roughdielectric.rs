@@ -60,10 +60,6 @@ impl BSDF for RoughDielectricBSDF {
         let wo = sample_record.wo;
         let cos_i = wi.z;
         let cos_o = wo.z;
-        if cos_i == 0.0 {
-            return eval_result;
-        }
-
         let reflect = cos_i * cos_o > 0.0;
         let eta = if cos_i > 0.0 { self.eta } else { self.inv_eta };
         let wi_align = if cos_i > 0.0 { wi } else { -wi };
@@ -117,10 +113,6 @@ impl BSDF for RoughDielectricBSDF {
     fn sample(&self, u1: Vector2f, u2: Vector2f, wi_in: Vector3f) -> BSDFSampleRecord {
         let mut sampling_record = BSDFSampleRecord::default();
         sampling_record.wi = wi_in;
-        if wi_in.z == 0.0 {
-            return sampling_record;
-        }
-
         let wi = wi_in;
         let cos_i = wi.z;
         if cos_i == 0.0 {

@@ -56,6 +56,7 @@ pub struct TriangleMesh {
     tri_normals: Vec<Vector3f>,
     tri_uv_indices: Vec<[Option<usize>; 3]>,
     bvh: Option<BVH>,
+    use_face_normals: bool,
 }
 
 impl TriangleMesh {
@@ -122,6 +123,7 @@ impl TriangleMesh {
             tri_normals,
             tri_uv_indices,
             bvh: None,
+            use_face_normals: false,
         };
         mesh.build_bvh();
         Ok(mesh)
@@ -238,6 +240,7 @@ impl TriangleMesh {
             tri_normals,
             tri_uv_indices,
             bvh: None,
+            use_face_normals: false,
         };
         mesh.build_bvh();
         Ok(mesh)
@@ -313,6 +316,10 @@ impl TriangleMesh {
         let uv2 = indices[2].and_then(|i| self.uvs.get(i)).cloned().unwrap_or(Vector2f::new(0.0, 0.0));
         uv0 * bary.x + uv1 * bary.y + uv2 * bary.z
     }
+
+    pub fn set_face_normals(&mut self, use_face_normals: bool) {
+        self.use_face_normals = use_face_normals;
+    }
 }
 
 fn ply_prop_f32(elem: &DefaultElement, name: &str) -> Option<Float> {
@@ -372,13 +379,17 @@ impl Shape for TriangleMesh {
                 })
             }) {
                 let geo_n = hit.geo_normal();
-                let mut sh_n = self.tri_normals.get(idx).cloned().unwrap_or(geo_n);
+                let mut sh_n = if self.use_face_normals {
+                    geo_n
+                } else {
+                    self.tri_normals.get(idx).cloned().unwrap_or(geo_n)
+                };
                 if sh_n.dot(&geo_n) < 0.0 {
                     sh_n = -sh_n;
                 }
                 let bary = self.triangles[idx].barycentric(&hit.p());
                 let uv = self.tri_uv(idx, bary);
-                return Some(SurfaceIntersection::new(
+                let intersection = SurfaceIntersection::new(
                     hit.p(),
                     geo_n,
                     sh_n,
@@ -387,7 +398,9 @@ impl Shape for TriangleMesh {
                     RGBSpectrum::default(),
                     None,
                     None,
-                ));
+                )
+                .with_triangle_index(Some(idx));
+                return Some(intersection);
             }
         } else {
             for (idx, tri) in self.triangles.iter().enumerate() {
@@ -395,7 +408,11 @@ impl Shape for TriangleMesh {
                     let hit_t = hit.t();
                     if hit_t < closest_t {
                         let geo_n = hit.geo_normal();
-                        let mut sh_n = self.tri_normals.get(idx).cloned().unwrap_or(geo_n);
+                        let mut sh_n = if self.use_face_normals {
+                            geo_n
+                        } else {
+                            self.tri_normals.get(idx).cloned().unwrap_or(geo_n)
+                        };
                         if sh_n.dot(&geo_n) < 0.0 {
                             sh_n = -sh_n;
                         }
@@ -410,7 +427,8 @@ impl Shape for TriangleMesh {
                             RGBSpectrum::default(),
                             None,
                             None,
-                        );
+                        )
+                        .with_triangle_index(Some(idx));
                         closest_t = hit_t;
                         closest_hit = Some(hit);
                     }
@@ -464,7 +482,11 @@ impl Shape for TriangleMesh {
         let p = p0 * bary.x + p1 * bary.y + p2 * bary.z;
 
         let geo_n = self.triangles[idx].geometric_normal();
-        let mut sh_n = self.tri_normals.get(idx).cloned().unwrap_or(geo_n);
+        let mut sh_n = if self.use_face_normals {
+            geo_n
+        } else {
+            self.tri_normals.get(idx).cloned().unwrap_or(geo_n)
+        };
         if sh_n.dot(&geo_n) < 0.0 {
             sh_n = -sh_n;
         }
@@ -486,4 +508,5 @@ impl Shape for TriangleMesh {
     fn surface_area(&self) -> Float {
         self.total_area
     }
+
 }

@@ -27,6 +27,9 @@ impl BlendBSDF {
 
 impl BSDF for BlendBSDF {
     fn eval(&self, sample_record: BSDFSampleRecord) -> BSDFEvalResult {
+        if sample_record.wi.z <= 0.0 {
+            return BSDFEvalResult::default();
+        }
         let rec_a = BSDFSampleRecord::new(sample_record.wi, sample_record.wo, 0.0, sample_record.uv);
         let rec_b = BSDFSampleRecord::new(sample_record.wi, sample_record.wo, 0.0, sample_record.uv);
 
@@ -40,6 +43,9 @@ impl BSDF for BlendBSDF {
     }
 
     fn sample(&self, u1: Vector2f, u2: Vector2f, wi: Vector3f) -> BSDFSampleRecord {
+        if wi.z <= 0.0 {
+            return BSDFSampleRecord::default();
+        }
         let choose_a = u1.x < self.weight;
         let mut remapped = u1;
         if self.weight > 0.0 && self.weight < 1.0 {

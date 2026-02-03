@@ -65,23 +65,18 @@ impl Integrator for PathIntegrator {
                 } else
                 if bounce == 0 {
                     radiance += throughput.component_mul(&Vector3f::new(le[0], le[1], le[2]));
-                } else if let Some(light_pdf_area) = intersection.light_pdf_area() {
-                    let p = intersection.p();
-                    let dist2 = (p - ray.origin()).dot(&(p - ray.origin()));
-                    let cos_light = cos_light_hit.max(0.0);
-                    if cos_light > 0.0 && dist2 > 0.0 {
-                        let light_pdf = light_pdf_area * dist2 / cos_light;
-                        let weight = power_heuristic(prev_bsdf_pdf, light_pdf);
-                        radiance += throughput.component_mul(&Vector3f::new(le[0], le[1], le[2])) * weight;
-                    }
+                } else if let Some(light_pdf) = scene.pdf_light(&intersection, &ray.origin()) {
+                    let weight = power_heuristic(prev_bsdf_pdf, light_pdf);
+                    radiance += throughput.component_mul(&Vector3f::new(le[0], le[1], le[2])) * weight;
                 }
             }
 
-            let n = intersection.geo_normal();
-            let (tangent, bitangent) = build_tangent_frame(&n);
+            let n_geo = intersection.geo_normal();
+            let n_sh = intersection.sh_normal();
 
             let wi_world = -ray.dir();
-            let wi_local = world_to_local(&wi_world, &tangent, &bitangent, &n);
+            let (tangent, bitangent) = build_tangent_frame(&n_sh);
+            let wi_local = world_to_local(&wi_world, &tangent, &bitangent, &n_sh);
 
             let material = match intersection.material() {
                 Some(m) => m,
@@ -111,7 +106,7 @@ impl Integrator for PathIntegrator {
 
                                     if cos_light > 0.0 {
                                         let shadow_ray = Ray3f::new(
-                                            p + n * 1e-3,
+                                            p + n_geo * 1e-3,
                                             wo_world,
                                             Some(1e-3),
                                             None,
@@ -128,7 +123,7 @@ impl Integrator for PathIntegrator {
                                         };
 
                                         if !is_occluded {
-                                            let wo_local = world_to_local(&wo_world, &tangent, &bitangent, &n);
+                                            let wo_local = world_to_local(&wo_world, &tangent, &bitangent, &n_sh);
                                             let mut eval_record = BSDFSampleRecord::default();
                                             eval_record.wi = wi_local;
                                             eval_record.wo = wo_local;
@@ -157,14 +152,14 @@ impl Integrator for PathIntegrator {
                             let dir_len = direction.norm();
                             if dir_len > 0.0 && pdf > 0.0 && !irradiance.is_black() {
                                 let wo_world = direction / dir_len;
-                                let shadow_ray = Ray3f::new(
-                                    intersection.p() + n * 1e-3,
-                                    wo_world,
-                                    Some(1e-3),
-                                    None,
-                                );
+                                    let shadow_ray = Ray3f::new(
+                                        intersection.p() + n_geo * 1e-3,
+                                        wo_world,
+                                        Some(1e-3),
+                                        None,
+                                    );
                                 if !scene.ray_intersection_t(&shadow_ray) {
-                                    let wo_local = world_to_local(&wo_world, &tangent, &bitangent, &n);
+                                    let wo_local = world_to_local(&wo_world, &tangent, &bitangent, &n_sh);
                                     let mut eval_record = BSDFSampleRecord::default();
                                     eval_record.wi = wi_local;
                                     eval_record.wo = wo_local;
@@ -196,7 +191,8 @@ impl Integrator for PathIntegrator {
                 wi_local,
                 intersection.uv(),
                 intersection.p(),
-                n,
+                n_sh,
+                n_geo,
                 &tangent,
                 &bitangent,
             ) {
@@ -248,7 +244,8 @@ fn compute_scatter_ray(
     wi_local: Vector3f,
     uv: Vector2f,
     p: Vector3f,
-    n: Vector3f,
+    n_sh: Vector3f,
+    n_geo: Vector3f,
     tangent: &Vector3f,
     bitangent: &Vector3f,
 ) -> Option<(Ray3f, Vector3f, Float)> {
@@ -264,9 +261,9 @@ fn compute_scatter_ray(
     let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
     let cos_theta = wo_local.z.abs();
     let bsdf_weight = f * (cos_theta / pdf);
+    let wo_world = local_to_world(&wo_local, tangent, bitangent, &n_sh);
 
-    let wo_world = local_to_world(&wo_local, tangent, bitangent, &n);
-    let offset_dir = if wo_world.dot(&n) >= 0.0 { n } else { -n };
+    let offset_dir = if wo_world.dot(&n_geo) >= 0.0 { n_geo } else { -n_geo };
     let origin = p + offset_dir * 1e-6;
     Some((Ray3f::new(origin, wo_world, Some(1e-4), None), bsdf_weight, pdf))
 }
