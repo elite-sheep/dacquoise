@@ -18,6 +18,7 @@ Materials:
 - Rough dielectric (GGX/Beckmann microfacet)
 - Blend BSDF
 - Two-sided wrapper
+- Null BSDF
 
 Integrators:
 - Path tracer
