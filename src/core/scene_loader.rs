@@ -43,11 +43,16 @@ struct BsdfState {
     reflectance: Option<RGBSpectrum>,
     specular_reflectance: Option<RGBSpectrum>,
     specular_transmittance: Option<RGBSpectrum>,
+    eta: Option<RGBSpectrum>,
+    k: Option<RGBSpectrum>,
     alpha: Option<Float>,
+    alpha_u: Option<Float>,
+    alpha_v: Option<Float>,
     distribution: Option<String>,
     int_ior: Option<Float>,
     ext_ior: Option<Float>,
     weight: Option<Float>,
+    sample_visible: bool,
     texture: Option<BsdfTextureState>,
     texture_active: bool,
     children: Vec<Arc<dyn BSDF>>,
@@ -61,11 +66,16 @@ impl BsdfState {
             reflectance: None,
             specular_reflectance: None,
             specular_transmittance: None,
+            eta: None,
+            k: None,
             alpha: None,
+            alpha_u: None,
+            alpha_v: None,
             distribution: None,
             int_ior: None,
             ext_ior: None,
             weight: None,
+            sample_visible: true,
             texture: None,
             texture_active: false,
             children: Vec::new(),
@@ -400,6 +410,10 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             if let Some(current_bsdf) = bsdf_stack.last_mut() {
                                 if name_attr == "alpha" {
                                     current_bsdf.alpha = Some(parse_float(&value_attr)?);
+                                } else if name_attr == "alpha_u" {
+                                    current_bsdf.alpha_u = Some(parse_float(&value_attr)?);
+                                } else if name_attr == "alpha_v" {
+                                    current_bsdf.alpha_v = Some(parse_float(&value_attr)?);
                                 } else if name_attr == "weight" {
                                     current_bsdf.weight = Some(parse_float(&value_attr)?);
                                 } else if name_attr == "int_ior" {
@@ -412,6 +426,12 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 } else if name_attr == "specular_transmittance" {
                                     let v = parse_float(&value_attr)?;
                                     current_bsdf.specular_transmittance = Some(RGBSpectrum::new(v, v, v));
+                                } else if name_attr == "eta" {
+                                    let v = parse_float(&value_attr)?;
+                                    current_bsdf.eta = Some(RGBSpectrum::new(v, v, v));
+                                } else if name_attr == "k" {
+                                    let v = parse_float(&value_attr)?;
+                                    current_bsdf.k = Some(RGBSpectrum::new(v, v, v));
                                 } else if name_attr == "reflectance" {
                                     let v = parse_float(&value_attr)?;
                                     current_bsdf.reflectance = Some(RGBSpectrum::new(v, v, v));
@@ -473,6 +493,8 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                     if let Some(ref mut tex) = current_bsdf.texture {
                                         tex.raw = parse_bool(&value_attr)?;
                                     }
+                                } else if name_attr == "sample_visible" {
+                                    current_bsdf.sample_visible = parse_bool(&value_attr)?;
                                 }
                             }
                         }
@@ -566,6 +588,10 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                     current_bsdf.specular_reflectance = Some(parse_vec3_spectrum(&value_attr)?);
                                 } else if name_attr == "specular_transmittance" {
                                     current_bsdf.specular_transmittance = Some(parse_vec3_spectrum(&value_attr)?);
+                                } else if name_attr == "eta" {
+                                    current_bsdf.eta = Some(parse_vec3_spectrum(&value_attr)?);
+                                } else if name_attr == "k" {
+                                    current_bsdf.k = Some(parse_vec3_spectrum(&value_attr)?);
                                 }
                             }
                             if in_emitter && name_attr == "radiance" {
@@ -901,29 +927,66 @@ fn build_bsdf(state: BsdfState, base_dir: &Path) -> Result<Arc<dyn BSDF>, SceneL
             Ok(Arc::new(LambertianDiffuseBSDF::new(texture)) as Arc<dyn BSDF>)
         }
         "roughconductor" => {
-            if let Some(dist) = state.distribution.as_ref() {
-                if dist.to_lowercase() != "ggx" {
-                    return Err(SceneLoadError::Parse(format!("unsupported roughconductor distribution: {}", dist)));
+            let dist = state.distribution.as_deref().unwrap_or("beckmann").to_lowercase();
+            let m_type = match dist.as_str() {
+                "ggx" => crate::materials::microfacet::MicrofacetType::GGX,
+                "beckmann" => crate::materials::microfacet::MicrofacetType::Beckmann,
+                other => {
+                    return Err(SceneLoadError::Parse(format!("unsupported roughconductor distribution: {}", other)));
                 }
-            }
-            let alpha = state.alpha.unwrap_or(0.1);
+            };
+            let (alpha_u, alpha_v) = if state.alpha_u.is_some() || state.alpha_v.is_some() {
+                let au = state.alpha_u.ok_or(SceneLoadError::MissingField("bsdf.alpha_u"))?;
+                let av = state.alpha_v.ok_or(SceneLoadError::MissingField("bsdf.alpha_v"))?;
+                (au, av)
+            } else {
+                let a = state.alpha.unwrap_or(0.1);
+                (a, a)
+            };
             let spec = state.specular_reflectance.unwrap_or(RGBSpectrum::new(1.0, 1.0, 1.0));
-            Ok(Arc::new(RoughConductorBSDF::new(alpha, spec)) as Arc<dyn BSDF>)
+            let eta = state.eta.unwrap_or(RGBSpectrum::new(0.0, 0.0, 0.0));
+            let k = state.k.unwrap_or(RGBSpectrum::new(1.0, 1.0, 1.0));
+            Ok(Arc::new(RoughConductorBSDF::new(
+                m_type,
+                alpha_u,
+                alpha_v,
+                state.sample_visible,
+                eta,
+                k,
+                spec,
+            )) as Arc<dyn BSDF>)
         }
         "roughdielectric" | "dielectric" => {
-            if state.bsdf_type == "roughdielectric" {
-                if let Some(dist) = state.distribution.as_ref() {
-                    if dist.to_lowercase() != "ggx" {
-                        return Err(SceneLoadError::Parse(format!("unsupported roughdielectric distribution: {}", dist)));
-                    }
+            let dist = state.distribution.as_deref().unwrap_or("beckmann").to_lowercase();
+            let m_type = match dist.as_str() {
+                "ggx" => crate::materials::microfacet::MicrofacetType::GGX,
+                "beckmann" => crate::materials::microfacet::MicrofacetType::Beckmann,
+                other => {
+                    return Err(SceneLoadError::Parse(format!("unsupported roughdielectric distribution: {}", other)));
                 }
-            }
-            let alpha = if state.bsdf_type == "dielectric" { 0.0 } else { state.alpha.unwrap_or(0.1) };
+            };
+            let (alpha_u, alpha_v) = if state.alpha_u.is_some() || state.alpha_v.is_some() {
+                let au = state.alpha_u.ok_or(SceneLoadError::MissingField("bsdf.alpha_u"))?;
+                let av = state.alpha_v.ok_or(SceneLoadError::MissingField("bsdf.alpha_v"))?;
+                (au, av)
+            } else {
+                let a = if state.bsdf_type == "dielectric" { 0.0 } else { state.alpha.unwrap_or(0.1) };
+                (a, a)
+            };
             let int_ior = state.int_ior.unwrap_or(1.5046);
             let ext_ior = state.ext_ior.unwrap_or(1.000277);
             let spec_reflect = state.specular_reflectance.unwrap_or(RGBSpectrum::new(1.0, 1.0, 1.0));
             let spec_trans = state.specular_transmittance.unwrap_or(RGBSpectrum::new(1.0, 1.0, 1.0));
-            Ok(Arc::new(RoughDielectricBSDF::new(alpha, int_ior, ext_ior, spec_reflect, spec_trans)) as Arc<dyn BSDF>)
+            Ok(Arc::new(RoughDielectricBSDF::new(
+                m_type,
+                alpha_u,
+                alpha_v,
+                state.sample_visible,
+                int_ior,
+                ext_ior,
+                spec_reflect,
+                spec_trans,
+            )) as Arc<dyn BSDF>)
         }
         "blendbsdf" => {
             if state.children.len() != 2 {

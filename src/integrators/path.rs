@@ -209,7 +209,8 @@ impl Integrator for PathIntegrator {
                 break;
             }
 
-            if bounce >= 2 {
+            let rr_depth: u32 = 5;
+            if bounce >= rr_depth {
                 let max_comp = throughput.x.max(throughput.y).max(throughput.z);
                 let survival = max_comp.min(0.95).max(0.05);
                 if rng.next_f32() > survival {
