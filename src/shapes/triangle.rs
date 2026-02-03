@@ -11,7 +11,6 @@ use crate::math::spectrum::RGBSpectrum;
 use crate::math::warp::square_to_triangle;
 
 use std::option::Option;
-use std::any::Any;
 
 pub struct Triangle {
     p0: Vector3f,
@@ -52,7 +51,8 @@ impl Shape for Triangle {
         if self.is_in_trangle(&intesection_p) && t >= ray.min_t && t <= ray.max_t {
             let bary = self.barycentric(&intesection_p);
             let uv = Vector2f::new(bary.y, bary.z);
-            let intersection = SurfaceIntersection::new(intesection_p, geo_normal, geo_normal, uv, t, RGBSpectrum::default(), None, None);
+            let intersection = SurfaceIntersection::new(intesection_p, geo_normal, geo_normal, uv, t, RGBSpectrum::default(), None, None)
+                .with_triangle_index(Some(0));
             return Some(intersection);
         } else {
             return None;
@@ -102,9 +102,6 @@ impl Shape for Triangle {
         length
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 }
 
 impl Triangle {

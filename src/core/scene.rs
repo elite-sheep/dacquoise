@@ -301,10 +301,6 @@ mod tests {
         fn surface_area(&self) -> Float {
             1.0
         }
-
-        fn as_any(&self) -> &dyn std::any::Any {
-            self
-        }
     }
 
     struct TestBSDF;

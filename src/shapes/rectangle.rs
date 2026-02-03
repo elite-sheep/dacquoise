@@ -7,7 +7,6 @@ use crate::math::constants::{EPSILON, Float, Vector2f, Vector3f};
 use crate::math::ray::Ray3f;
 use crate::math::spectrum::RGBSpectrum;
 use crate::math::transform::Transform;
-use std::any::Any;
 
 pub struct Rectangle {
     to_world: Transform,
@@ -123,7 +122,4 @@ impl Shape for Rectangle {
         self.area
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
 }

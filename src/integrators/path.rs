@@ -136,20 +136,8 @@ impl Integrator for PathIntegrator {
                                             eval_record.pdf = 0.0;
                                             eval_record.uv = intersection.uv();
                                             let eval = material.eval(eval_record);
-                                            let mut f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
+                                            let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
                                             let cos_theta = wo_local.z.abs();
-                                            let corr = shading_normal_correction(
-                                                wi_world,
-                                                wo_world,
-                                                wi_local,
-                                                wo_local,
-                                                n_geo,
-                                            );
-                                            if let Some(corr) = corr {
-                                                f *= corr;
-                                            } else {
-                                                continue;
-                                            }
 
                                             let light_pdf_area = light_sample.pdf();
                                             let light_pdf = light_pdf_area * dist2 / cos_light;
@@ -184,20 +172,8 @@ impl Integrator for PathIntegrator {
                                     eval_record.pdf = 0.0;
                                     eval_record.uv = intersection.uv();
                                     let eval = material.eval(eval_record);
-                                    let mut f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
+                                    let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
                                     let cos_theta = wo_local.z.abs();
-                                    let corr = shading_normal_correction(
-                                        wi_world,
-                                        wo_world,
-                                        wi_local,
-                                        wo_local,
-                                        n_geo,
-                                    );
-                                    if let Some(corr) = corr {
-                                        f *= corr;
-                                    } else {
-                                        continue;
-                                    }
                                     if cos_theta > 0.0 {
                                         let bsdf_pdf = eval.pdf.max(0.0);
                                         let weight = if is_delta { 1.0 } else { power_heuristic(pdf, bsdf_pdf) };
@@ -267,27 +243,6 @@ fn power_heuristic(pdf_a: Float, pdf_b: Float) -> Float {
     }
 }
 
-fn shading_normal_correction(
-    wi_world: Vector3f,
-    wo_world: Vector3f,
-    wi_local: Vector3f,
-    wo_local: Vector3f,
-    n_geo: Vector3f,
-) -> Option<Float> {
-    let wi_dot_geo = wi_world.dot(&n_geo);
-    let wo_dot_geo = wo_world.dot(&n_geo);
-    let wi_cos = wi_local.z;
-    let wo_cos = wo_local.z;
-    if wi_dot_geo * wi_cos <= 0.0 || wo_dot_geo * wo_cos <= 0.0 {
-        return None;
-    }
-    let denom = wo_cos * wi_dot_geo;
-    if denom.abs() <= 1e-8 {
-        return None;
-    }
-    Some(((wi_cos * wo_dot_geo) / denom).abs())
-}
-
 fn compute_scatter_ray(
     material: &dyn crate::core::bsdf::BSDF,
     u1: Vector2f,
@@ -311,24 +266,8 @@ fn compute_scatter_ray(
     let eval = material.eval(sample);
     let f = Vector3f::new(eval.value[0], eval.value[1], eval.value[2]);
     let cos_theta = wo_local.z.abs();
-    let mut bsdf_weight = f * (cos_theta / pdf);
-
-    let wi_world = local_to_world(&wi_local, tangent, bitangent, &n_sh);
+    let bsdf_weight = f * (cos_theta / pdf);
     let wo_world = local_to_world(&wo_local, tangent, bitangent, &n_sh);
-
-    let wi_dot_geo = wi_world.dot(&n_geo);
-    let wo_dot_geo = wo_world.dot(&n_geo);
-    let wi_cos = wi_local.z;
-    let wo_cos = wo_local.z;
-    if wi_dot_geo * wi_cos <= 0.0 || wo_dot_geo * wo_cos <= 0.0 {
-        return None;
-    }
-
-    let denom = wo_cos * wi_dot_geo;
-    if denom.abs() > 1e-8 {
-        let correction = (wi_cos * wo_dot_geo / denom).abs();
-        bsdf_weight *= correction;
-    }
 
     let offset_dir = if wo_world.dot(&n_geo) >= 0.0 { n_geo } else { -n_geo };
     let origin = p + offset_dir * 1e-6;

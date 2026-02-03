@@ -3,7 +3,6 @@ use dacquoise::core::scene::Scene;
 use dacquoise::core::scene_loader::load_scene_with_settings;
 use dacquoise::math::constants::{Float, Vector2f};
 use dacquoise::math::ray::Ray3f;
-use dacquoise::shapes::triangle_mesh::TriangleMesh;
 use exr::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -232,8 +231,8 @@ fn write_scalar<W: Write>(writer: &mut W, ty: PlyType, value: i64) -> std::resul
     .map_err(|e| e.to_string())
 }
 
-fn flip_ply_faces(path: &Path, faces_to_flip: &HashSet<usize>) -> std::result::Result<(usize, usize), String> {
-    if faces_to_flip.is_empty() {
+fn flip_ply_faces(path: &Path, triangles_to_flip: &HashSet<usize>) -> std::result::Result<(usize, usize), String> {
+    if triangles_to_flip.is_empty() {
         return Ok((0, 0));
     }
 
@@ -282,14 +281,26 @@ fn flip_ply_faces(path: &Path, faces_to_flip: &HashSet<usize>) -> std::result::R
     writer.write_all(&vertex_bytes).map_err(|e| e.to_string())?;
 
     let mut flipped = 0usize;
-    for face_idx in 0..face_elem.count {
+    let mut tri_cursor = 0usize;
+    for _face_idx in 0..face_elem.count {
         let count = read_scalar(&mut reader, count_ty)? as usize;
         let mut indices = Vec::with_capacity(count);
         for _ in 0..count {
             let idx = read_scalar(&mut reader, index_ty)?;
             indices.push(idx);
         }
-        if faces_to_flip.contains(&face_idx) && count >= 3 {
+        let mut flip = false;
+        if count >= 3 {
+            let tri_count = count - 2;
+            for local in 0..tri_count {
+                if triangles_to_flip.contains(&(tri_cursor + local)) {
+                    flip = true;
+                    break;
+                }
+            }
+            tri_cursor += tri_count;
+        }
+        if flip {
             indices.reverse();
             flipped += 1;
         }
@@ -302,6 +313,48 @@ fn flip_ply_faces(path: &Path, faces_to_flip: &HashSet<usize>) -> std::result::R
     writer.flush().map_err(|e| e.to_string())?;
     std::fs::rename(&tmp_path, path).map_err(|e| e.to_string())?;
     Ok((face_elem.count, flipped))
+}
+
+fn extract_attr(line: &str, key: &str) -> Option<String> {
+    let needle = format!("{}=\"", key);
+    let start = line.find(&needle)? + needle.len();
+    let rest = &line[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+fn load_shape_filenames(scene_path: &str) -> std::result::Result<HashMap<String, String>, String> {
+    let file = File::open(scene_path).map_err(|e| e.to_string())?;
+    let reader = BufReader::new(file);
+    let mut map = HashMap::new();
+    let mut in_shape = false;
+    let mut current_id: Option<String> = None;
+    let mut current_filename: Option<String> = None;
+
+    for line in reader.lines() {
+        let line = line.map_err(|e| e.to_string())?;
+        let trimmed = line.trim();
+        if trimmed.starts_with("<shape") {
+            in_shape = true;
+            current_id = extract_attr(trimmed, "id");
+            current_filename = None;
+        }
+        if in_shape {
+            if trimmed.contains("name=\"filename\"") {
+                if let Some(value) = extract_attr(trimmed, "value") {
+                    current_filename = Some(value);
+                }
+            }
+            if trimmed.starts_with("</shape") {
+                if let (Some(id), Some(filename)) = (current_id.take(), current_filename.take()) {
+                    map.insert(id, filename);
+                }
+                in_shape = false;
+            }
+        }
+    }
+
+    Ok(map)
 }
 
 fn main() {
@@ -318,6 +371,9 @@ fn main() {
     let load = load_scene_with_settings(scene_path)
         .unwrap_or_else(|e| panic!("failed to load scene {}: {:?}", scene_path, e));
     let scene = load.scene;
+    let shape_files = load_shape_filenames(scene_path)
+        .unwrap_or_else(|e| panic!("failed to parse {}: {}", scene_path, e));
+    let base_dir = scene.base_dir().to_path_buf();
     let sensor = scene.camera(0).expect("camera not found");
 
     let img = read_rgba(exr_path);
@@ -326,7 +382,7 @@ fn main() {
 
     let mut black_pixels = 0usize;
     let mut backfaced_hits = 0usize;
-    let mut face_map: HashMap<String, HashSet<usize>> = HashMap::new();
+    let mut tri_map: HashMap<String, HashSet<usize>> = HashMap::new();
 
     for y in 0..height {
         for x in 0..width {
@@ -344,13 +400,21 @@ fn main() {
                     if view.dot(&hit.geo_normal()) < 0.0 {
                         backfaced_hits += 1;
                         let object = &scene.objects()[obj_idx];
-                        if let Some(mesh) = object.shape.as_any().downcast_ref::<TriangleMesh>() {
-                            if let Some(path) = mesh.source_path() {
-                                if let Some((_, tri_idx)) = mesh.ray_intersection_with_index(&ray) {
-                                    let face_idx = mesh.tri_face_index(tri_idx).unwrap_or(tri_idx);
-                                    face_map.entry(path.to_string()).or_default().insert(face_idx);
-                                }
-                            }
+                        let name = match object.name.as_deref() {
+                            Some(n) => n,
+                            None => continue,
+                        };
+                        let filename = match shape_files.get(name) {
+                            Some(f) => f,
+                            None => continue,
+                        };
+                        let path = if Path::new(filename).is_absolute() {
+                            PathBuf::from(filename)
+                        } else {
+                            base_dir.join(filename)
+                        };
+                        if let Some(tri_idx) = hit.triangle_index() {
+                            tri_map.entry(path.to_string_lossy().to_string()).or_default().insert(tri_idx);
                         }
                     }
                 }
@@ -362,12 +426,12 @@ fn main() {
         "black pixels: {}, backfaced hits: {}, meshes to update: {}",
         black_pixels,
         backfaced_hits,
-        face_map.len()
+        tri_map.len()
     );
 
-    for (path_str, faces) in face_map {
+    for (path_str, triangles) in tri_map {
         let path = PathBuf::from(path_str);
-        let (total, flipped) = flip_ply_faces(&path, &faces)
+        let (total, flipped) = flip_ply_faces(&path, &triangles)
             .unwrap_or_else(|e| panic!("failed to update {}: {}", path.display(), e));
         println!(
             "updated {}: flipped {}/{} faces",
