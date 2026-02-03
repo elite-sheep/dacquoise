@@ -1,7 +1,6 @@
 use dacquoise::core::integrator::Integrator;
 use dacquoise::core::rng::LcgRng;
 use dacquoise::core::scene_loader::load_scene_with_settings;
-use dacquoise::core::sensor::Sensor;
 use dacquoise::integrators::path::PathIntegrator;
 use dacquoise::math::constants::{Float, Vector2f, Vector3f};
 use std::env;

@@ -12,6 +12,7 @@ use crate::math::constants::{Float, Matrix3f, Matrix4f, Vector3f};
 use crate::math::transform::Transform;
 use crate::sensors::perspective::PerspectiveCamera;
 use crate::materials::lambertian_diffuse::LambertianDiffuseBSDF;
+use crate::materials::null::NullBSDF;
 use crate::materials::roughconductor::RoughConductorBSDF;
 use crate::materials::roughdielectric::RoughDielectricBSDF;
 use crate::materials::blend::BlendBSDF;
@@ -169,10 +170,9 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut scene = Scene::new();
     scene.set_base_dir(base_dir.to_path_buf());
 
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Eof) => break,
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+    macro_rules! handle_start {
+        ($e:expr, $is_empty:expr) => {{
+            let e = $e;
                 match e.name().as_ref() {
                     b"default" => {
                         let mut key: Option<String> = None;
@@ -347,6 +347,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             } else {
                                 Vector3f::new(sx.unwrap_or(1.0), sy.unwrap_or(1.0), sz.unwrap_or(1.0))
                             };
+
                             let mut t = Matrix4f::identity();
                             t[(0, 0)] = s.x;
                             t[(1, 1)] = s.y;
@@ -810,7 +811,41 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         }
                     }
                     _ => {}
+                };
+        if $is_empty {
+            match e.name().as_ref() {
+                b"bsdf" => {
+                    if let Some(state) = bsdf_stack.pop() {
+                        let bsdf_id = state.id.clone();
+                        let bsdf = build_bsdf(state, base_dir)?;
+
+                        if let Some(parent) = bsdf_stack.last_mut() {
+                            parent.children.push(bsdf);
+                        } else if in_shape {
+                            if let Some(id) = bsdf_id {
+                                bsdfs.insert(id, bsdf.clone());
+                            }
+                            current_shape_bsdf_inline = Some(bsdf);
+                        } else if let Some(id) = bsdf_id {
+                            bsdfs.insert(id, bsdf);
+                        }
+                    }
                 }
+                _ => {}
+            }
+        }
+        Ok::<(), SceneLoadError>(())
+        }};
+    }
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Eof) => break,
+            Ok(Event::Start(e)) => {
+                handle_start!(e, false)?;
+            }
+            Ok(Event::Empty(e)) => {
+                handle_start!(e, true)?;
             }
             Ok(Event::End(e)) => {
                 match e.name().as_ref() {
@@ -1087,7 +1122,7 @@ fn build_bsdf(state: BsdfState, base_dir: &Path) -> Result<Arc<dyn BSDF>, SceneL
             };
             Ok(Arc::new(LambertianDiffuseBSDF::new(texture)) as Arc<dyn BSDF>)
         }
-        "roughconductor" => {
+        "roughconductor" | "conductor" => {
             let dist = state.distribution.as_deref().unwrap_or("beckmann").to_lowercase();
             let m_type = match dist.as_str() {
                 "ggx" => crate::materials::microfacet::MicrofacetType::GGX,
@@ -1101,7 +1136,7 @@ fn build_bsdf(state: BsdfState, base_dir: &Path) -> Result<Arc<dyn BSDF>, SceneL
                 let av = state.alpha_v.ok_or(SceneLoadError::MissingField("bsdf.alpha_v"))?;
                 (au, av)
             } else {
-                let a = state.alpha.unwrap_or(0.1);
+                let a = if state.bsdf_type == "conductor" { 0.0 } else { state.alpha.unwrap_or(0.1) };
                 (a, a)
             };
             let spec = state.specular_reflectance.unwrap_or(RGBSpectrum::new(1.0, 1.0, 1.0));
@@ -1161,6 +1196,9 @@ fn build_bsdf(state: BsdfState, base_dir: &Path) -> Result<Arc<dyn BSDF>, SceneL
                 return Err(SceneLoadError::Parse("twosided expects exactly one bsdf child".to_string()));
             }
             Ok(state.children[0].clone())
+        }
+        "null" => {
+            Ok(Arc::new(NullBSDF::new()) as Arc<dyn BSDF>)
         }
         other => Err(SceneLoadError::Parse(format!("unsupported bsdf type: {}", other))),
     }
