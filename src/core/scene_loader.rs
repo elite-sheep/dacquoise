@@ -27,6 +27,7 @@ use crate::core::scene::SceneObject;
 use crate::core::bsdf::BSDF;
 use crate::core::integrator::Integrator;
 use crate::integrators::path::PathIntegrator;
+use crate::integrators::raymarching::RaymarchingIntegrator;
 use std::sync::Arc;
 use nalgebra as na;
 
@@ -108,6 +109,7 @@ pub fn load_scene<P: AsRef<Path>>(path: P) -> Result<Scene, SceneLoadError> {
 pub struct SceneLoadResult {
     pub scene: Scene,
     pub integrator: Option<Box<dyn Integrator>>,
+    pub integrator_type: Option<String>,
     pub samples_per_pixel: Option<u32>,
     pub max_depth: Option<u32>,
 }
@@ -148,6 +150,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut height: Option<usize> = None;
     let mut max_depth: Option<u32> = None;
     let mut spp: Option<u32> = None;
+    let mut integrator_type: Option<String> = None;
 
     let mut bsdfs: HashMap<String, Arc<dyn BSDF>> = HashMap::new();
     let mut current_shape_filename: Option<String> = None;
@@ -200,9 +203,11 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                     b"integrator" => {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"type" {
-                                let integrator_type = resolve_value(&attr.unescape_value().unwrap_or_default(), &defaults);
-                                if integrator_type != "path" {
-                                    return Err(SceneLoadError::Parse(format!("unsupported integrator: {}", integrator_type)));
+                                let integrator_value = resolve_value(&attr.unescape_value().unwrap_or_default(), &defaults);
+                                let integrator_value = integrator_value.trim().to_lowercase();
+                                integrator_type = Some(integrator_value.clone());
+                                if integrator_value != "path" && integrator_value != "raymarching" {
+                                    return Err(SceneLoadError::Parse(format!("unsupported integrator: {}", integrator_value)));
                                 }
                             }
                         }
@@ -1060,7 +1065,16 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     scene.build_bvh();
 
     let integrator = if let Some(depth) = max_depth {
-        Some(Box::new(PathIntegrator::new(depth, spp.unwrap_or(1))) as Box<dyn Integrator>)
+        let integrator_name = integrator_type.as_deref().unwrap_or("path");
+        let spp = spp.unwrap_or(1);
+        let integrator: Box<dyn Integrator> = match integrator_name {
+            "path" => Box::new(PathIntegrator::new(depth, spp)),
+            "raymarching" => Box::new(RaymarchingIntegrator::new(depth, spp)),
+            other => {
+                return Err(SceneLoadError::Parse(format!("unsupported integrator: {}", other)));
+            }
+        };
+        Some(integrator)
     } else {
         None
     };
@@ -1068,6 +1082,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     Ok(SceneLoadResult {
         scene,
         integrator,
+        integrator_type,
         samples_per_pixel: spp,
         max_depth,
     })

@@ -20,6 +20,10 @@ impl ComputationNode for NullBSDF {
 }
 
 impl BSDF for NullBSDF {
+    fn is_null(&self) -> bool {
+        true
+    }
+
     fn eval(&self, sample_record: BSDFSampleRecord) -> BSDFEvalResult {
         let mut eval_result = BSDFEvalResult::default();
         let wi = sample_record.wi;

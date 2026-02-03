@@ -16,7 +16,9 @@ mod shapes;
 mod textures;
 
 use self::core::scene_loader::load_scene_with_settings;
+use self::core::integrator::Integrator;
 use self::integrators::path::PathIntegrator;
+use self::integrators::raymarching::RaymarchingIntegrator;
 use self::io::exr_utils;
 use self::renderers::simple::{ SimpleRenderer, Renderer };
 
@@ -69,7 +71,15 @@ fn main() {
     let mut scene = load_result.scene;
     let spp = spp_override.or(load_result.samples_per_pixel).unwrap_or(1);
     let max_depth = max_depth_override.or(load_result.max_depth).unwrap_or(1);
-    let integrator = Box::new(PathIntegrator::new(max_depth, spp));
+    let integrator_name = load_result.integrator_type.as_deref().unwrap_or("path");
+    let integrator: Box<dyn Integrator> = match integrator_name {
+        "path" => Box::new(PathIntegrator::new(max_depth, spp)),
+        "raymarching" => Box::new(RaymarchingIntegrator::new(max_depth, spp)),
+        other => {
+            eprintln!("Unsupported integrator '{}', falling back to path.", other);
+            Box::new(PathIntegrator::new(max_depth, spp))
+        }
+    };
 
     let renderer: SimpleRenderer = SimpleRenderer::new(integrator, camera_id, seed);
     let image = renderer.render(&mut scene);
