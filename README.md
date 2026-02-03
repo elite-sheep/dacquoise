@@ -4,13 +4,22 @@
 
 **Dacquoise** is an offline physically-based renderer written in **Rust**.  
 
-## Proposed Functions
+## Features
 
-- Rendering pipeline.  
-- Editor based on QT.
-- Multiple Monte Carlo methods.
-- Standardized sampling APIs.  
-- Material modeling methods.  
+Emitters:
+- Area
+- Directional
+- Environment map
+
+Materials:
+- Lambertian diffuse
+- Rough conductor (GGX/Beckmann microfacet)
+- Rough dielectric (GGX/Beckmann microfacet)
+- Blend BSDF
+- Two-sided wrapper
+
+Integrators:
+- Path tracer
 
 ## Build
 
