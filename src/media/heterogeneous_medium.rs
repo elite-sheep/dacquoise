@@ -67,3 +67,35 @@ fn union_bbox(a: Option<AABB>, b: Option<AABB>) -> Option<AABB> {
         (None, None) => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::volumes::const_volume::ConstantVolume;
+
+    #[test]
+    fn heterogeneous_medium_scale_and_clamp() {
+        let sigma_t = Arc::new(ConstantVolume::new_scalar(0.5));
+        let albedo = Arc::new(ConstantVolume::new_rgb(Vector3f::new(2.0, -1.0, 0.5)));
+        let medium = HeterogeneousMedium::new(sigma_t, albedo).with_scale(2.0);
+
+        let sigma = medium.sigma_t(Vector3f::new(0.0, 0.0, 0.0));
+        assert_eq!(sigma, RGBSpectrum::new(1.0, 1.0, 1.0));
+
+        let alb = medium.albedo(Vector3f::new(0.0, 0.0, 0.0));
+        assert_eq!(alb, RGBSpectrum::new(1.0, 0.0, 0.5));
+    }
+
+    #[test]
+    fn heterogeneous_medium_bbox_union() {
+        let bbox_a = AABB::new(Vector3f::new(-1.0, 0.0, 2.0), Vector3f::new(1.0, 1.0, 3.0));
+        let bbox_b = AABB::new(Vector3f::new(-2.0, -1.0, 0.0), Vector3f::new(0.0, 2.0, 4.0));
+        let sigma_t = Arc::new(ConstantVolume::new_scalar(1.0).with_bbox(Some(bbox_a)));
+        let albedo = Arc::new(ConstantVolume::new_scalar(1.0).with_bbox(Some(bbox_b)));
+        let medium = HeterogeneousMedium::new(sigma_t, albedo);
+
+        let out = medium.bbox().expect("bbox");
+        assert_eq!(out.p_min, Vector3f::new(-2.0, -1.0, 0.0));
+        assert_eq!(out.p_max, Vector3f::new(1.0, 2.0, 4.0));
+    }
+}

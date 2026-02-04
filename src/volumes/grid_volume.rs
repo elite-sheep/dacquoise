@@ -274,3 +274,59 @@ fn read_f32(bytes: &[u8], cursor: &mut usize) -> Result<Float, String> {
     *cursor += 4;
     Ok(Float::from_le_bytes(buf))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn write_test_vol(path: &PathBuf, data: &[f32], xres: i32, yres: i32, zres: i32, channels: i32) {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"VOL");
+        bytes.push(3u8);
+        bytes.extend_from_slice(&1i32.to_le_bytes()); // encoding
+        bytes.extend_from_slice(&xres.to_le_bytes());
+        bytes.extend_from_slice(&yres.to_le_bytes());
+        bytes.extend_from_slice(&zres.to_le_bytes());
+        bytes.extend_from_slice(&channels.to_le_bytes());
+        // bbox 0..1
+        for v in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0] {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in data {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        std::fs::write(path, bytes).expect("write vol");
+    }
+
+    fn approx_eq(a: Vector3f, b: Vector3f) -> bool {
+        let eps = 1e-4;
+        (a.x - b.x).abs() < eps && (a.y - b.y).abs() < eps && (a.z - b.z).abs() < eps
+    }
+
+    #[test]
+    fn grid_volume_trilinear_center() {
+        let mut path = std::env::temp_dir();
+        path.push("grid_volume_trilinear_center.vol");
+        let data: Vec<f32> = (0..8).map(|v| v as f32).collect();
+        write_test_vol(&path, &data, 2, 2, 2, 1);
+
+        let vol = GridVolume::from_file(path.to_str().unwrap()).expect("load vol");
+        assert_eq!(vol.channels(), 1);
+        let v = vol.eval(Vector3f::new(0.5, 0.5, 0.5));
+        assert!(approx_eq(v, Vector3f::new(3.5, 3.5, 3.5)));
+    }
+
+    #[test]
+    fn grid_volume_nearest_corner() {
+        let mut path = std::env::temp_dir();
+        path.push("grid_volume_nearest_corner.vol");
+        let data: Vec<f32> = (0..8).map(|v| v as f32).collect();
+        write_test_vol(&path, &data, 2, 2, 2, 1);
+
+        let mut vol = GridVolume::from_file(path.to_str().unwrap()).expect("load vol");
+        vol.set_filter_mode(VolumeFilterMode::Nearest);
+        let v = vol.eval(Vector3f::new(0.1, 0.1, 0.1));
+        assert!(approx_eq(v, Vector3f::new(0.0, 0.0, 0.0)));
+    }
+}
