@@ -1,7 +1,7 @@
 // Copyright @yucwang 2026
 
-pub mod const_volume;
-pub mod grid_volume;
+pub mod constant;
+pub mod grid;
 
 use crate::math::constants::Float;
 

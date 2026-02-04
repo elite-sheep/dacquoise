@@ -71,7 +71,7 @@ fn union_bbox(a: Option<AABB>, b: Option<AABB>) -> Option<AABB> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::volumes::const_volume::ConstantVolume;
+    use crate::volumes::constant::ConstantVolume;
 
     #[test]
     fn heterogeneous_medium_scale_and_clamp() {
