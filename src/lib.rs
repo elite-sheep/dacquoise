@@ -11,3 +11,5 @@ pub mod integrators;
 pub mod materials;
 pub mod shapes;
 pub mod emitters;
+pub mod volumes;
+pub mod media;

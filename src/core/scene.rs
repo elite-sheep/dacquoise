@@ -4,12 +4,16 @@ use crate::core::bsdf::BSDF;
 use crate::core::bvh::BVH;
 use crate::core::emitter::{Emitter, EmitterFlag, EmitterSample};
 use crate::core::interaction::SurfaceIntersection;
+use crate::core::medium::Medium;
 use crate::core::sensor::Sensor;
 use crate::core::shape::Shape;
+use crate::core::volume::Volume;
 use crate::emitters::area::AreaEmitter;
+use crate::math::aabb::AABB;
+use crate::math::constants::{ Float, Vector2f, Vector3f };
 use crate::math::ray::Ray3f;
 use crate::math::spectrum::{RGBSpectrum, Spectrum};
-use crate::math::constants::{ Float, Vector2f, Vector3f };
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct SceneObject {
@@ -17,20 +21,34 @@ pub struct SceneObject {
     pub material: Arc<dyn BSDF>,
     pub emission: RGBSpectrum,
     pub name: Option<String>,
+    pub interior_medium: Option<Arc<dyn Medium>>,
 }
 
 impl SceneObject {
     pub fn new(shape: Arc<dyn Shape>, material: Arc<dyn BSDF>) -> Self {
-        Self { shape, material, emission: RGBSpectrum::default(), name: None }
+        Self { shape, material, emission: RGBSpectrum::default(), name: None, interior_medium: None }
     }
 
     pub fn with_emission(shape: Arc<dyn Shape>, material: Arc<dyn BSDF>, emission: RGBSpectrum) -> Self {
-        Self { shape, material, emission, name: None }
+        Self { shape, material, emission, name: None, interior_medium: None }
     }
 
     pub fn with_name(mut self, name: String) -> Self {
         self.name = Some(name);
         self
+    }
+
+    pub fn with_interior_medium(mut self, medium: Option<Arc<dyn Medium>>) -> Self {
+        self.interior_medium = medium;
+        self
+    }
+
+    pub fn interior_medium(&self) -> Option<Arc<dyn Medium>> {
+        self.interior_medium.clone()
+    }
+
+    pub fn shape(&self) -> &Arc<dyn Shape> {
+        &self.shape
     }
 }
 
@@ -38,6 +56,10 @@ pub struct Scene {
     objects: Vec<SceneObject>,
     sensors: Vec<Box<dyn Sensor>>,
     emitters: Vec<Box<dyn Emitter>>,
+    volumes: HashMap<String, Arc<dyn Volume>>,
+    media: HashMap<String, Arc<dyn Medium>>,
+    global_medium: Option<Arc<dyn Medium>>,
+    scene_bounds: AABB,
     base_dir: std::path::PathBuf,
     bvh: Option<BVH>,
 }
@@ -48,6 +70,10 @@ impl Scene {
             objects: Vec::new(),
             sensors: Vec::new(),
             emitters: Vec::new(),
+            volumes: HashMap::new(),
+            media: HashMap::new(),
+            global_medium: None,
+            scene_bounds: AABB::default(),
             base_dir: std::path::PathBuf::new(),
             bvh: None,
         }
@@ -55,12 +81,32 @@ impl Scene {
 
     pub fn with_objects(objects: Vec<SceneObject>) -> Self {
         let emitters = Self::emitters_from_objects(&objects);
-        Self { objects, sensors: Vec::new(), emitters, base_dir: std::path::PathBuf::new(), bvh: None }
+        Self {
+            objects,
+            sensors: Vec::new(),
+            emitters,
+            volumes: HashMap::new(),
+            media: HashMap::new(),
+            global_medium: None,
+            scene_bounds: AABB::default(),
+            base_dir: std::path::PathBuf::new(),
+            bvh: None,
+        }
     }
 
     pub fn with_objects_and_sensors(objects: Vec<SceneObject>, sensors: Vec<Box<dyn Sensor>>) -> Self {
         let emitters = Self::emitters_from_objects(&objects);
-        Self { objects, sensors, emitters, base_dir: std::path::PathBuf::new(), bvh: None }
+        Self {
+            objects,
+            sensors,
+            emitters,
+            volumes: HashMap::new(),
+            media: HashMap::new(),
+            global_medium: None,
+            scene_bounds: AABB::default(),
+            base_dir: std::path::PathBuf::new(),
+            bvh: None,
+        }
     }
 
     pub fn add_object(&mut self, object: SceneObject) {
@@ -107,6 +153,42 @@ impl Scene {
 
     pub fn emitters_mut(&mut self) -> &mut Vec<Box<dyn Emitter>> {
         &mut self.emitters
+    }
+
+    pub fn add_volume(&mut self, id: String, volume: Arc<dyn Volume>) {
+        self.volumes.insert(id, volume);
+    }
+
+    pub fn volume(&self, id: &str) -> Option<Arc<dyn Volume>> {
+        self.volumes.get(id).cloned()
+    }
+
+    pub fn volumes(&self) -> &HashMap<String, Arc<dyn Volume>> {
+        &self.volumes
+    }
+
+    pub fn add_medium(&mut self, id: String, medium: Arc<dyn Medium>) {
+        self.media.insert(id, medium);
+    }
+
+    pub fn medium(&self, id: &str) -> Option<Arc<dyn Medium>> {
+        self.media.get(id).cloned()
+    }
+
+    pub fn media(&self) -> &HashMap<String, Arc<dyn Medium>> {
+        &self.media
+    }
+
+    pub fn set_global_medium(&mut self, medium: Option<Arc<dyn Medium>>) {
+        self.global_medium = medium;
+    }
+
+    pub fn global_medium(&self) -> Option<Arc<dyn Medium>> {
+        self.global_medium.clone()
+    }
+
+    pub fn scene_bounds(&self) -> &AABB {
+        &self.scene_bounds
     }
 
     pub fn take_sensor(&mut self, camera_id: usize) -> Option<Box<dyn Sensor>> {
@@ -164,6 +246,8 @@ impl Scene {
         }
 
         self.bvh = Some(BVH::new(prim_bounds, prim_centroids));
+
+        self.scene_bounds = scene_bounds;
 
         for emitter in &mut self.emitters {
             emitter.set_scene_bounds(&scene_bounds);

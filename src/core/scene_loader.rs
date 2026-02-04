@@ -8,6 +8,8 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 
 use crate::core::scene::Scene;
+use crate::core::medium::Medium;
+use crate::core::volume::Volume;
 use crate::math::constants::{Float, Matrix3f, Matrix4f, Vector3f};
 use crate::math::transform::Transform;
 use crate::sensors::perspective::PerspectiveCamera;
@@ -18,6 +20,7 @@ use crate::materials::roughdielectric::RoughDielectricBSDF;
 use crate::materials::blend::BlendBSDF;
 use crate::math::spectrum::RGBSpectrum;
 use crate::shapes::rectangle::Rectangle;
+use crate::shapes::cube::Cube;
 use crate::shapes::triangle_mesh::TriangleMesh;
 use crate::textures::constant::ConstantTexture;
 use crate::textures::image::{FilterMode, ImageTexture, WrapMode};
@@ -28,6 +31,11 @@ use crate::core::bsdf::BSDF;
 use crate::core::integrator::Integrator;
 use crate::integrators::path::PathIntegrator;
 use crate::integrators::raymarching::RaymarchingIntegrator;
+use crate::media::homogeneous_medium::HomogeneousMedium;
+use crate::media::heterogeneous_medium::HeterogeneousMedium;
+use crate::volumes::const_volume::ConstantVolume;
+use crate::volumes::grid_volume::GridVolume;
+use crate::volumes::{VolumeFilterMode, VolumeWrapMode};
 use std::sync::Arc;
 use nalgebra as na;
 
@@ -89,6 +97,68 @@ impl BsdfState {
 }
 
 #[derive(Debug)]
+struct VolumeState {
+    volume_type: String,
+    id: Option<String>,
+    value_rgb: Option<RGBSpectrum>,
+    value_scalar: Option<Float>,
+    filename: Option<String>,
+    filter_type: Option<String>,
+    wrap_mode: Option<String>,
+    to_world: Matrix4f,
+    use_grid_bbox: Option<bool>,
+}
+
+impl VolumeState {
+    fn new(volume_type: String, id: Option<String>) -> Self {
+        Self {
+            volume_type,
+            id,
+            value_rgb: None,
+            value_scalar: None,
+            filename: None,
+            filter_type: None,
+            wrap_mode: None,
+            to_world: Matrix4f::identity(),
+            use_grid_bbox: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct MediumState {
+    medium_type: String,
+    id: Option<String>,
+    name: Option<String>,
+    sigma_t: Option<RGBSpectrum>,
+    sigma_t_scalar: Option<Float>,
+    sigma_t_ref: Option<String>,
+    albedo: Option<RGBSpectrum>,
+    albedo_scalar: Option<Float>,
+    albedo_ref: Option<String>,
+    scale: Option<Float>,
+    phase_function: Option<String>,
+}
+
+impl MediumState {
+    fn new(medium_type: String, id: Option<String>) -> Self {
+        Self {
+            medium_type,
+            id,
+            name: None,
+            sigma_t: None,
+            sigma_t_scalar: None,
+            sigma_t_ref: None,
+            albedo: None,
+            albedo_scalar: None,
+            albedo_ref: None,
+            scale: None,
+            phase_function: None,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum SceneLoadError {
     Io(std::io::Error),
     Parse(String),
@@ -135,9 +205,15 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut in_shape_transform = false;
     let mut in_emitter_transform = false;
     let mut in_texture_transform = false;
+    let mut in_integrator = false;
+    let mut in_volume_transform = false;
     let mut bsdf_stack: Vec<BsdfState> = Vec::new();
     let mut in_shape = false;
     let mut in_emitter = false;
+    let mut in_volume = false;
+    let mut in_medium = false;
+    let mut in_shape_medium = false;
+    let mut in_medium_volume = false;
 
     let mut fov_deg: Option<Float> = None;
     let mut origin: Option<Vector3f> = None;
@@ -151,6 +227,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut max_depth: Option<u32> = None;
     let mut spp: Option<u32> = None;
     let mut integrator_type: Option<String> = None;
+    let mut raymarch_step_size: Option<Float> = None;
 
     let mut bsdfs: HashMap<String, Arc<dyn BSDF>> = HashMap::new();
     let mut current_shape_filename: Option<String> = None;
@@ -169,6 +246,12 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut current_shape_id: Option<String> = None;
     let mut current_shape_transform = Matrix4f::identity();
     let mut current_shape_face_normals = false;
+    let mut current_volume: Option<VolumeState> = None;
+    let mut current_medium: Option<MediumState> = None;
+    let mut current_shape_medium: Option<MediumState> = None;
+    let mut current_medium_volume: Option<VolumeState> = None;
+    let mut current_medium_volume_name: Option<String> = None;
+    let mut pending_media: Vec<MediumState> = Vec::new();
 
     let mut scene = Scene::new();
     scene.set_base_dir(base_dir.to_path_buf());
@@ -211,6 +294,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 }
                             }
                         }
+                        in_integrator = true;
                     }
                     b"film" => {
                         in_film = true;
@@ -248,6 +332,13 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                     in_emitter_transform = name.as_ref() == "to_world";
                                 }
                             }
+                        } else if in_volume {
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"name" {
+                                    let name = attr.unescape_value().unwrap_or_default();
+                                    in_volume_transform = name.as_ref() == "to_world";
+                                }
+                            }
                         }
                     }
                     b"lookat" => {
@@ -269,7 +360,11 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         }
                     }
                     b"translate" => {
-                        if (in_shape && in_shape_transform) || (in_emitter && in_emitter_transform) || (in_sensor && in_sensor_transform) {
+                        if (in_shape && in_shape_transform)
+                            || (in_emitter && in_emitter_transform)
+                            || (in_sensor && in_sensor_transform)
+                            || (in_volume && in_volume_transform)
+                        {
                             let mut x: Float = 0.0;
                             let mut y: Float = 0.0;
                             let mut z: Float = 0.0;
@@ -302,6 +397,11 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             if in_sensor && in_sensor_transform {
                                 current_sensor_transform = t * current_sensor_transform;
                             }
+                            if in_volume && in_volume_transform {
+                                if let Some(ref mut volume) = current_volume {
+                                    volume.to_world = t * volume.to_world;
+                                }
+                            }
                         }
                         if in_texture_transform {
                             let mut x: Float = 0.0;
@@ -333,7 +433,11 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         }
                     }
                     b"scale" => {
-                        if (in_shape && in_shape_transform) || (in_emitter && in_emitter_transform) || (in_sensor && in_sensor_transform) {
+                        if (in_shape && in_shape_transform)
+                            || (in_emitter && in_emitter_transform)
+                            || (in_sensor && in_sensor_transform)
+                            || (in_volume && in_volume_transform)
+                        {
                             let mut sx: Option<Float> = None;
                             let mut sy: Option<Float> = None;
                             let mut sz: Option<Float> = None;
@@ -366,6 +470,11 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             if in_sensor && in_sensor_transform {
                                 current_sensor_transform = t * current_sensor_transform;
                             }
+                            if in_volume && in_volume_transform {
+                                if let Some(ref mut volume) = current_volume {
+                                    volume.to_world = t * volume.to_world;
+                                }
+                            }
                         }
                         if in_texture_transform {
                             let mut sx: Option<Float> = None;
@@ -397,7 +506,11 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         }
                     }
                     b"rotate" => {
-                        if (in_shape && in_shape_transform) || (in_emitter && in_emitter_transform) || (in_sensor && in_sensor_transform) {
+                        if (in_shape && in_shape_transform)
+                            || (in_emitter && in_emitter_transform)
+                            || (in_sensor && in_sensor_transform)
+                            || (in_volume && in_volume_transform)
+                        {
                             let mut axis = Vector3f::new(0.0, 0.0, 0.0);
                             let mut angle: Option<Float> = None;
                             for attr in e.attributes().flatten() {
@@ -423,6 +536,11 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                     }
                                     if in_sensor && in_sensor_transform {
                                         current_sensor_transform = t * current_sensor_transform;
+                                    }
+                                    if in_volume && in_volume_transform {
+                                        if let Some(ref mut volume) = current_volume {
+                                            volume.to_world = t * volume.to_world;
+                                        }
                                     }
                                 }
                             }
@@ -463,7 +581,11 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         }
                     }
                     b"matrix" => {
-                        if (in_shape && in_shape_transform) || (in_emitter && in_emitter_transform) || (in_sensor && in_sensor_transform) {
+                        if (in_shape && in_shape_transform)
+                            || (in_emitter && in_emitter_transform)
+                            || (in_sensor && in_sensor_transform)
+                            || (in_volume && in_volume_transform)
+                        {
                             let mut value_attr: Option<String> = None;
                             for attr in e.attributes().flatten() {
                                 if attr.key.as_ref() == b"value" {
@@ -480,6 +602,11 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 }
                                 if in_sensor && in_sensor_transform {
                                     current_sensor_transform = t * current_sensor_transform;
+                                }
+                                if in_volume && in_volume_transform {
+                                    if let Some(ref mut volume) = current_volume {
+                                        volume.to_world = t * volume.to_world;
+                                    }
                                 }
                             }
                         }
@@ -513,6 +640,9 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             }
                         }
                         if let (Some(name_attr), Some(value_attr)) = (name_attr, value_attr) {
+                            if in_integrator && name_attr == "step_size" {
+                                raymarch_step_size = Some(parse_float(&value_attr)?);
+                            }
                             if in_sensor {
                                 if name_attr == "fov" {
                                     fov_deg = Some(parse_float(&value_attr)?);
@@ -564,6 +694,37 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 } else if name_attr == "reflectance" {
                                     let v = parse_float(&value_attr)?;
                                     current_bsdf.reflectance = Some(RGBSpectrum::new(v, v, v));
+                                }
+                            }
+                            if in_volume && name_attr == "value" {
+                                if let Some(ref mut volume) = current_volume {
+                                    volume.value_scalar = Some(parse_float(&value_attr)?);
+                                }
+                            }
+                            if in_medium_volume && name_attr == "value" {
+                                if let Some(ref mut volume) = current_medium_volume {
+                                    volume.value_scalar = Some(parse_float(&value_attr)?);
+                                }
+                            }
+                            if in_shape_medium {
+                                if let Some(ref mut medium) = current_shape_medium {
+                                    if name_attr == "sigma_t" {
+                                        medium.sigma_t_scalar = Some(parse_float(&value_attr)?);
+                                    } else if name_attr == "albedo" {
+                                        medium.albedo_scalar = Some(parse_float(&value_attr)?);
+                                    } else if name_attr == "scale" {
+                                        medium.scale = Some(parse_float(&value_attr)?);
+                                    }
+                                }
+                            } else if in_medium {
+                                if let Some(ref mut medium) = current_medium {
+                                    if name_attr == "sigma_t" {
+                                        medium.sigma_t_scalar = Some(parse_float(&value_attr)?);
+                                    } else if name_attr == "albedo" {
+                                        medium.albedo_scalar = Some(parse_float(&value_attr)?);
+                                    } else if name_attr == "scale" {
+                                        medium.scale = Some(parse_float(&value_attr)?);
+                                    }
                                 }
                             }
                         }
@@ -629,6 +790,11 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             if in_shape && name_attr == "face_normals" {
                                 current_shape_face_normals = parse_bool(&value_attr)?;
                             }
+                            if in_volume && name_attr == "use_grid_bbox" {
+                                if let Some(ref mut volume) = current_volume {
+                                    volume.use_grid_bbox = Some(parse_bool(&value_attr)?);
+                                }
+                            }
                         }
                     }
                     b"bsdf" => {
@@ -643,6 +809,77 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         }
                         if let Some(bsdf_type) = bsdf_type {
                             bsdf_stack.push(BsdfState::new(bsdf_type, bsdf_id));
+                        }
+                    }
+                    b"volume" => {
+                        let mut volume_type: Option<String> = None;
+                        let mut volume_id: Option<String> = None;
+                        let mut volume_name: Option<String> = None;
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"type" => volume_type = Some(resolve_value(&attr.unescape_value().unwrap_or_default(), &defaults)),
+                                b"id" => volume_id = Some(attr.unescape_value().unwrap_or_default().to_string()),
+                                b"name" => volume_name = Some(attr.unescape_value().unwrap_or_default().to_string()),
+                                _ => {}
+                            }
+                        }
+                        if let Some(volume_type) = volume_type {
+                            let volume_type = volume_type.trim().to_lowercase();
+                            if in_medium || in_shape_medium {
+                                let inline_type = match volume_type.as_str() {
+                                    "const" | "constvolume" => Some("const".to_string()),
+                                    "grid" => Some("grid".to_string()),
+                                    _ => None,
+                                };
+                                if let Some(inline_type) = inline_type {
+                                    in_medium_volume = true;
+                                    current_medium_volume_name = volume_name;
+                                    current_medium_volume = Some(VolumeState::new(inline_type, None));
+                                }
+                            } else if volume_type == "const" || volume_type == "grid" {
+                                in_volume = true;
+                                current_volume = Some(VolumeState::new(volume_type, volume_id));
+                            } else {
+                                in_volume = false;
+                                current_volume = None;
+                            }
+                        }
+                    }
+                    b"medium" => {
+                        let mut medium_type: Option<String> = None;
+                        let mut medium_id: Option<String> = None;
+                        let mut medium_name: Option<String> = None;
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"type" => medium_type = Some(resolve_value(&attr.unescape_value().unwrap_or_default(), &defaults)),
+                                b"id" => medium_id = Some(attr.unescape_value().unwrap_or_default().to_string()),
+                                b"name" => medium_name = Some(attr.unescape_value().unwrap_or_default().to_string()),
+                                _ => {}
+                            }
+                        }
+                        if let Some(medium_type) = medium_type {
+                            let medium_type = medium_type.trim().to_lowercase();
+                            if medium_type == "homogeneous" || medium_type == "heterogeneous" {
+                                if in_shape {
+                                    in_shape_medium = true;
+                                    let mut state = MediumState::new(medium_type, medium_id);
+                                    state.name = medium_name;
+                                    current_shape_medium = Some(state);
+                                } else {
+                                    in_medium = true;
+                                    let mut state = MediumState::new(medium_type, medium_id);
+                                    state.name = medium_name;
+                                    current_medium = Some(state);
+                                }
+                            } else {
+                                if in_shape {
+                                    in_shape_medium = false;
+                                    current_shape_medium = None;
+                                } else {
+                                    in_medium = false;
+                                    current_medium = None;
+                                }
+                            }
                         }
                     }
                     b"texture" => {
@@ -687,6 +924,41 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             }
                             if in_shape && name_attr == "filename" {
                                 current_shape_filename = Some(value_attr.clone());
+                            }
+                            if in_volume {
+                                if let Some(ref mut volume) = current_volume {
+                                    if name_attr == "filename" {
+                                        volume.filename = Some(value_attr.clone());
+                                    } else if name_attr == "filter_type" {
+                                        volume.filter_type = Some(value_attr.clone());
+                                    } else if name_attr == "wrap_mode" {
+                                        volume.wrap_mode = Some(value_attr.clone());
+                                    }
+                                }
+                            }
+                            if in_medium_volume {
+                                if let Some(ref mut volume) = current_medium_volume {
+                                    if name_attr == "filename" {
+                                        volume.filename = Some(value_attr.clone());
+                                    } else if name_attr == "filter_type" {
+                                        volume.filter_type = Some(value_attr.clone());
+                                    } else if name_attr == "wrap_mode" {
+                                        volume.wrap_mode = Some(value_attr.clone());
+                                    }
+                                }
+                            }
+                            if in_shape_medium {
+                                if let Some(ref mut medium) = current_shape_medium {
+                                    if name_attr == "phase_function" {
+                                        medium.phase_function = Some(value_attr.clone());
+                                    }
+                                }
+                            } else if in_medium {
+                                if let Some(ref mut medium) = current_medium {
+                                    if name_attr == "phase_function" {
+                                        medium.phase_function = Some(value_attr.clone());
+                                    }
+                                }
                             }
                             if let Some(current_bsdf) = bsdf_stack.last_mut() {
                                 if current_bsdf.texture_active {
@@ -739,6 +1011,33 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             if in_emitter && current_emitter_type.as_deref() == Some("directional") && name_attr == "irradiance" {
                                 current_emitter_irradiance = Some(parse_vec3_spectrum(&value_attr)?);
                             }
+                            if in_volume && name_attr == "value" {
+                                if let Some(ref mut volume) = current_volume {
+                                    volume.value_rgb = Some(parse_vec3_spectrum(&value_attr)?);
+                                }
+                            }
+                            if in_medium_volume && name_attr == "value" {
+                                if let Some(ref mut volume) = current_medium_volume {
+                                    volume.value_rgb = Some(parse_vec3_spectrum(&value_attr)?);
+                                }
+                            }
+                            if in_shape_medium {
+                                if let Some(ref mut medium) = current_shape_medium {
+                                    if name_attr == "sigma_t" {
+                                        medium.sigma_t = Some(parse_vec3_spectrum(&value_attr)?);
+                                    } else if name_attr == "albedo" {
+                                        medium.albedo = Some(parse_vec3_spectrum(&value_attr)?);
+                                    }
+                                }
+                            } else if in_medium {
+                                if let Some(ref mut medium) = current_medium {
+                                    if name_attr == "sigma_t" {
+                                        medium.sigma_t = Some(parse_vec3_spectrum(&value_attr)?);
+                                    } else if name_attr == "albedo" {
+                                        medium.albedo = Some(parse_vec3_spectrum(&value_attr)?);
+                                    }
+                                }
+                            }
                         }
                     }
                     b"vector" => {
@@ -769,7 +1068,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 shape_id = Some(attr.unescape_value().unwrap_or_default().to_string());
                             }
                         }
-                        if matches!(shape_type.as_deref(), Some("obj") | Some("ply") | Some("rectangle")) {
+                        if matches!(shape_type.as_deref(), Some("obj") | Some("ply") | Some("rectangle") | Some("cube")) {
                             in_shape = true;
                             current_shape_type = shape_type;
                             current_shape_filename = None;
@@ -780,13 +1079,39 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             current_shape_id = shape_id;
                             current_shape_transform = Matrix4f::identity();
                             current_shape_face_normals = false;
+                            current_shape_medium = None;
+                            in_shape_medium = false;
                         } else {
                             in_shape = false;
                             current_shape_type = None;
                         }
                     }
                     b"ref" => {
-                        if in_shape {
+                        if in_shape_medium || in_medium {
+                            let mut name_attr: Option<String> = None;
+                            let mut id_attr: Option<String> = None;
+                            for attr in e.attributes().flatten() {
+                                match attr.key.as_ref() {
+                                    b"name" => name_attr = Some(attr.unescape_value().unwrap_or_default().to_string()),
+                                    b"id" => id_attr = Some(attr.unescape_value().unwrap_or_default().to_string()),
+                                    _ => {}
+                                }
+                            }
+                            if let (Some(name_attr), Some(id_attr)) = (name_attr, id_attr) {
+                                let target = if in_shape_medium {
+                                    current_shape_medium.as_mut()
+                                } else {
+                                    current_medium.as_mut()
+                                };
+                                if let Some(medium) = target {
+                                    if name_attr == "sigma_t" {
+                                        medium.sigma_t_ref = Some(id_attr);
+                                    } else if name_attr == "albedo" {
+                                        medium.albedo_ref = Some(id_attr);
+                                    }
+                                }
+                            }
+                        } else if in_shape {
                             for attr in e.attributes().flatten() {
                                 if attr.key.as_ref() == b"id" {
                                     current_shape_bsdf_ref = Some(attr.unescape_value().unwrap_or_default().to_string());
@@ -836,6 +1161,32 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         }
                     }
                 }
+                b"volume" => {
+                    if in_medium_volume {
+                        if let Some(state) = current_medium_volume.take() {
+                            commit_inline_medium_volume(state, &mut current_shape_medium, &mut current_medium, &current_medium_volume_name)?;
+                        }
+                        current_medium_volume_name = None;
+                        in_medium_volume = false;
+                    } else {
+                        if let Some(state) = current_volume.take() {
+                            let (id, volume) = build_volume(state, base_dir)?;
+                            scene.add_volume(id, volume);
+                        }
+                        in_volume = false;
+                        in_volume_transform = false;
+                    }
+                }
+                b"medium" => {
+                    if in_shape_medium {
+                        in_shape_medium = false;
+                    } else {
+                        if let Some(state) = current_medium.take() {
+                            pending_media.push(state);
+                        }
+                        in_medium = false;
+                    }
+                }
                 _ => {}
             }
         }
@@ -854,6 +1205,9 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
             }
             Ok(Event::End(e)) => {
                 match e.name().as_ref() {
+                    b"integrator" => {
+                        in_integrator = false;
+                    }
                     b"sensor" => {
                         if in_sensor {
                             let fov_deg = fov_deg.ok_or(SceneLoadError::MissingField("sensor.fov"))?;
@@ -924,6 +1278,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         in_shape_transform = false;
                         in_emitter_transform = false;
                         in_texture_transform = false;
+                        in_volume_transform = false;
                     }
                     b"texture" => {
                         if let Some(current_bsdf) = bsdf_stack.last_mut() {
@@ -945,6 +1300,32 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             } else if let Some(id) = bsdf_id {
                                 bsdfs.insert(id, bsdf);
                             }
+                        }
+                    }
+                    b"volume" => {
+                        if in_medium_volume {
+                            if let Some(state) = current_medium_volume.take() {
+                                commit_inline_medium_volume(state, &mut current_shape_medium, &mut current_medium, &current_medium_volume_name)?;
+                            }
+                            current_medium_volume_name = None;
+                            in_medium_volume = false;
+                        } else {
+                            if let Some(state) = current_volume.take() {
+                                let (id, volume) = build_volume(state, base_dir)?;
+                                scene.add_volume(id, volume);
+                            }
+                            in_volume = false;
+                            in_volume_transform = false;
+                        }
+                    }
+                    b"medium" => {
+                        if in_shape_medium {
+                            in_shape_medium = false;
+                        } else {
+                            if let Some(state) = current_medium.take() {
+                                pending_media.push(state);
+                            }
+                            in_medium = false;
                         }
                     }
                     b"emitter" => {
@@ -1021,6 +1402,10 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                     let transform = Transform::new(current_shape_transform);
                                     Arc::new(Rectangle::new(transform))
                                 }
+                                Some("cube") => {
+                                    let transform = Transform::new(current_shape_transform);
+                                    Arc::new(Cube::new(transform))
+                                }
                                 Some(other) => {
                                     return Err(SceneLoadError::Parse(format!("unsupported shape type: {}", other)));
                                 }
@@ -1032,6 +1417,16 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             let mut object = SceneObject::new(shape.clone(), material);
                             if let Some(id) = current_shape_id.take() {
                                 object = object.with_name(id);
+                            }
+                            if let Some(state) = current_shape_medium.take() {
+                                let is_interior = state.name.as_deref().unwrap_or("interior") == "interior";
+                                if is_interior {
+                                    let (id, medium) = build_medium(state, &scene)?;
+                                    if let Some(id) = id {
+                                        scene.add_medium(id, medium.clone());
+                                    }
+                                    object = object.with_interior_medium(Some(medium));
+                                }
                             }
                             if current_shape_emissive {
                                 let radiance = current_emitter_radiance.unwrap_or(RGBSpectrum::new(1.0, 1.0, 1.0));
@@ -1049,6 +1444,8 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         current_shape_id = None;
                         current_shape_transform = Matrix4f::identity();
                         current_shape_face_normals = false;
+                        current_shape_medium = None;
+                        in_shape_medium = false;
                     }
                     _ => {}
                 }
@@ -1064,12 +1461,22 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
 
     scene.build_bvh();
 
+    if !pending_media.is_empty() {
+        for state in pending_media {
+            let (id, medium) = build_medium(state, &scene)?;
+            if let Some(id) = id {
+                scene.add_medium(id, medium.clone());
+            }
+            scene.set_global_medium(Some(medium));
+        }
+    }
+
     let integrator = if let Some(depth) = max_depth {
         let integrator_name = integrator_type.as_deref().unwrap_or("path");
         let spp = spp.unwrap_or(1);
         let integrator: Box<dyn Integrator> = match integrator_name {
             "path" => Box::new(PathIntegrator::new(depth, spp)),
-            "raymarching" => Box::new(RaymarchingIntegrator::new(depth, spp)),
+            "raymarching" => Box::new(RaymarchingIntegrator::new(depth, spp, raymarch_step_size)),
             other => {
                 return Err(SceneLoadError::Parse(format!("unsupported integrator: {}", other)));
             }
@@ -1216,6 +1623,194 @@ fn build_bsdf(state: BsdfState, base_dir: &Path) -> Result<Arc<dyn BSDF>, SceneL
             Ok(Arc::new(NullBSDF::new()) as Arc<dyn BSDF>)
         }
         other => Err(SceneLoadError::Parse(format!("unsupported bsdf type: {}", other))),
+    }
+}
+
+fn build_volume(state: VolumeState, base_dir: &Path) -> Result<(String, Arc<dyn Volume>), SceneLoadError> {
+    let id = state.id.ok_or(SceneLoadError::MissingField("volume.id"))?;
+    match state.volume_type.as_str() {
+        "const" => {
+            let value = if let Some(rgb) = state.value_rgb {
+                Vector3f::new(rgb[0], rgb[1], rgb[2])
+            } else if let Some(v) = state.value_scalar {
+                Vector3f::new(v, v, v)
+            } else {
+                return Err(SceneLoadError::MissingField("volume.value"));
+            };
+            let volume = if state.value_scalar.is_some() && state.value_rgb.is_none() {
+                ConstantVolume::new_scalar(value.x)
+            } else {
+                ConstantVolume::new_rgb(value)
+            };
+            Ok((id, Arc::new(volume)))
+        }
+        "grid" => {
+            let filename = state.filename.ok_or(SceneLoadError::MissingField("volume.filename"))?;
+            let filename = if Path::new(&filename).is_absolute() {
+                filename
+            } else {
+                base_dir.join(filename).to_string_lossy().to_string()
+            };
+            let mut volume = GridVolume::from_file(&filename).map_err(SceneLoadError::Parse)?;
+            volume.set_transform(Transform::new(state.to_world));
+            if let Some(filter) = state.filter_type {
+                let filter = filter.trim().to_lowercase();
+                let mode = match filter.as_str() {
+                    "nearest" => VolumeFilterMode::Nearest,
+                    "trilinear" | "linear" => VolumeFilterMode::Trilinear,
+                    other => {
+                        return Err(SceneLoadError::Parse(format!("unsupported volume filter_type: {}", other)));
+                    }
+                };
+                volume.set_filter_mode(mode);
+            }
+            if let Some(wrap) = state.wrap_mode {
+                let wrap = wrap.trim().to_lowercase();
+                let mode = match wrap.as_str() {
+                    "repeat" => VolumeWrapMode::Repeat,
+                    "mirror" => VolumeWrapMode::Mirror,
+                    "clamp" => VolumeWrapMode::Clamp,
+                    other => {
+                        return Err(SceneLoadError::Parse(format!("unsupported volume wrap_mode: {}", other)));
+                    }
+                };
+                volume.set_wrap_mode(mode);
+            }
+            if let Some(use_grid_bbox) = state.use_grid_bbox {
+                volume.set_use_grid_bbox(use_grid_bbox);
+            }
+            Ok((id, Arc::new(volume)))
+        }
+        other => Err(SceneLoadError::Parse(format!("unsupported volume type: {}", other))),
+    }
+}
+
+fn build_medium(state: MediumState, scene: &Scene) -> Result<(Option<String>, Arc<dyn Medium>), SceneLoadError> {
+    if let Some(phase) = state.phase_function.as_deref() {
+        let phase = phase.trim().to_lowercase();
+        if phase != "isotropic" {
+            return Err(SceneLoadError::Parse(format!("unsupported phase_function: {}", phase)));
+        }
+    }
+
+    let scale = state.scale.unwrap_or(1.0);
+    let medium = match state.medium_type.as_str() {
+        "homogeneous" => {
+            if state.sigma_t_ref.is_some() {
+                return Err(SceneLoadError::Parse("homogeneous medium does not accept sigma_t volume refs".to_string()));
+            }
+            let sigma_t = resolve_spectrum(state.sigma_t, state.sigma_t_scalar, "medium.sigma_t")?;
+            let albedo = if state.albedo_ref.is_some() {
+                resolve_spectrum(state.albedo, state.albedo_scalar, "medium.albedo")
+                    .unwrap_or_else(|_| RGBSpectrum::new(1.0, 1.0, 1.0))
+            } else {
+                resolve_spectrum(state.albedo, state.albedo_scalar, "medium.albedo")?
+            };
+            let mut medium = HomogeneousMedium::new(sigma_t, albedo).with_scale(scale);
+            if let Some(albedo_id) = state.albedo_ref {
+                let volume = scene
+                    .volume(&albedo_id)
+                    .ok_or_else(|| SceneLoadError::Parse(format!("missing albedo volume ref: {}", albedo_id)))?;
+                medium = medium.with_albedo_volume(volume);
+            }
+            Arc::new(medium) as Arc<dyn Medium>
+        }
+        "heterogeneous" => {
+            let sigma_t_volume = if let Some(id) = state.sigma_t_ref {
+                scene
+                    .volume(&id)
+                    .ok_or_else(|| SceneLoadError::Parse(format!("missing sigma_t volume ref: {}", id)))?
+            } else if state.sigma_t.is_some() || state.sigma_t_scalar.is_some() {
+                let sigma_t = resolve_spectrum(state.sigma_t, state.sigma_t_scalar, "medium.sigma_t")?;
+                let value = Vector3f::new(sigma_t[0], sigma_t[1], sigma_t[2]);
+                Arc::new(ConstantVolume::new_rgb(value)) as Arc<dyn Volume>
+            } else {
+                return Err(SceneLoadError::MissingField("medium.sigma_t"));
+            };
+
+            let albedo_volume = if let Some(id) = state.albedo_ref {
+                scene
+                    .volume(&id)
+                    .ok_or_else(|| SceneLoadError::Parse(format!("missing albedo volume ref: {}", id)))?
+            } else if state.albedo.is_some() || state.albedo_scalar.is_some() {
+                let albedo = resolve_spectrum(state.albedo, state.albedo_scalar, "medium.albedo")?;
+                let value = Vector3f::new(albedo[0], albedo[1], albedo[2]);
+                Arc::new(ConstantVolume::new_rgb(value)) as Arc<dyn Volume>
+            } else {
+                return Err(SceneLoadError::MissingField("medium.albedo"));
+            };
+
+            Arc::new(HeterogeneousMedium::new(sigma_t_volume, albedo_volume).with_scale(scale)) as Arc<dyn Medium>
+        }
+        other => {
+            return Err(SceneLoadError::Parse(format!("unsupported medium type: {}", other)));
+        }
+    };
+
+    Ok((state.id, medium))
+}
+
+fn commit_inline_medium_volume(
+    state: VolumeState,
+    current_shape_medium: &mut Option<MediumState>,
+    current_medium: &mut Option<MediumState>,
+    volume_name: &Option<String>,
+) -> Result<(), SceneLoadError> {
+    let target = if let Some(medium) = current_shape_medium.as_mut() {
+        medium
+    } else if let Some(medium) = current_medium.as_mut() {
+        medium
+    } else {
+        return Err(SceneLoadError::Parse("inline volume missing parent medium".to_string()));
+    };
+
+    let name = volume_name
+        .as_deref()
+        .ok_or(SceneLoadError::MissingField("volume.name"))?;
+
+    if state.volume_type != "const" {
+        return Err(SceneLoadError::Parse(format!("unsupported inline volume type: {}", state.volume_type)));
+    }
+
+    let (rgb, scalar) = (state.value_rgb, state.value_scalar);
+    match name {
+        "sigma_t" => {
+            if let Some(rgb) = rgb {
+                target.sigma_t = Some(rgb);
+            } else if let Some(v) = scalar {
+                target.sigma_t_scalar = Some(v);
+            } else {
+                return Err(SceneLoadError::MissingField("volume.value"));
+            }
+        }
+        "albedo" => {
+            if let Some(rgb) = rgb {
+                target.albedo = Some(rgb);
+            } else if let Some(v) = scalar {
+                target.albedo_scalar = Some(v);
+            } else {
+                return Err(SceneLoadError::MissingField("volume.value"));
+            }
+        }
+        other => {
+            return Err(SceneLoadError::Parse(format!("unsupported inline volume name: {}", other)));
+        }
+    }
+
+    Ok(())
+}
+
+fn resolve_spectrum(
+    rgb: Option<RGBSpectrum>,
+    scalar: Option<Float>,
+    field: &'static str,
+) -> Result<RGBSpectrum, SceneLoadError> {
+    if let Some(rgb) = rgb {
+        Ok(rgb)
+    } else if let Some(v) = scalar {
+        Ok(RGBSpectrum::new(v, v, v))
+    } else {
+        Err(SceneLoadError::MissingField(field))
     }
 }
 

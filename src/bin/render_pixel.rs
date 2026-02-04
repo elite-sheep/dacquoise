@@ -63,7 +63,7 @@ fn main() {
     let integrator_name = load_result.integrator_type.as_deref().unwrap_or("path");
     let integrator: Box<dyn Integrator> = match integrator_name {
         "path" => Box::new(PathIntegrator::new(max_depth, spp)),
-        "raymarching" => Box::new(RaymarchingIntegrator::new(max_depth, spp)),
+        "raymarching" => Box::new(RaymarchingIntegrator::new(max_depth, spp, None)),
         other => {
             eprintln!("Unsupported integrator '{}', falling back to path.", other);
             Box::new(PathIntegrator::new(max_depth, spp))
