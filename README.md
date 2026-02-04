@@ -47,6 +47,19 @@ Run tests:
 cargo test
 ```
 
+Conda setup (optional):
+```
+conda create -n dacquoise python=3.11
+conda activate dacquoise
+python -m pip install -r requirements.txt
+```
+
+Python library (optional):
+```
+python -m pip install maturin
+maturin develop -m Cargo.toml --features python --release
+```
+
 Render a scene:
 ```
 cargo run --release --bin dacquoise -- scenes/cbox/cbox.xml output/cbox.exr --spp 128 --max-depth 3
@@ -57,6 +70,11 @@ cargo run --release --bin dacquoise -- scenes/cbox/cbox.xml output/cbox.exr --sp
 Use the CLI to render a scene file:
 ```
 cargo run --release --bin dacquoise -- <scene.xml> <output.exr> --spp <samples> --max-depth <depth>
+```
+
+Python rendering:
+```
+python python/render.py <scene.xml> --spp <samples> --max-depth <depth> --out <output.exr> --progress
 ```
 
 Sample scenes download [link](https://drive.google.com/drive/folders/1CVsNjM_GvmVP8oyHzRgteWlzTVGmjJnl?usp=sharing).
