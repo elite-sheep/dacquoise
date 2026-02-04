@@ -22,6 +22,15 @@ Materials:
 
 Integrators:
 - Path tracer
+- NerF-Like Ray marching
+
+Media:
+- Homogeneous medium
+- Heterogeneous medium
+
+Volumes:
+- Constant volume (albedo/sigma_t)
+- Grid volume (.vol/.vdb)
 
 ## Build
 
