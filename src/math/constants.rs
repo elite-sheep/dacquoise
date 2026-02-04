@@ -20,6 +20,7 @@ pub type Matrix3i = na::base::Matrix3<Int>;
 pub type Matrix3f = na::base::Matrix3<Float>;
 pub type Matrix4i = na::base::Matrix4<Int>;
 pub type Matrix4f = na::base::Matrix4<Float>;
+pub type MatrixXF = na::base::DMatrix<Float>;
 
 // Constants.
 pub const EPSILON: Float = 1e-8;
