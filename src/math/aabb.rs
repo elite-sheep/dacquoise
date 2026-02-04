@@ -89,6 +89,42 @@ impl AABB {
         true
     }
 
+    pub fn ray_intersect_range(&self, ray: &Ray3f) -> Option<(Float, Float)> {
+        if !self.is_valid() {
+            return None;
+        }
+
+        let o = ray.origin();
+        let d = ray.dir();
+        let mut t_min = ray.min_t;
+        let mut t_max = ray.max_t;
+
+        for idx in 0..3 {
+            let dir = d[idx];
+            if dir.abs() < 1e-8 {
+                if o[idx] < self.p_min[idx] || o[idx] > self.p_max[idx] {
+                    return None;
+                }
+                continue;
+            }
+
+            let inv = 1.0 / dir;
+            let mut t0 = (self.p_min[idx] - o[idx]) * inv;
+            let mut t1 = (self.p_max[idx] - o[idx]) * inv;
+            if t0 > t1 {
+                std::mem::swap(&mut t0, &mut t1);
+            }
+
+            t_min = t_min.max(t0);
+            t_max = t_max.min(t1);
+            if t_max < t_min {
+                return None;
+            }
+        }
+
+        Some((t_min, t_max))
+    }
+
     pub fn surface_area(&self) -> Float {
         let a = self.p_max[0] - self.p_min[0];
         let b = self.p_max[1] - self.p_min[1];

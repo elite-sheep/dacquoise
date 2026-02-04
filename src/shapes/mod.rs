@@ -3,3 +3,4 @@
 pub mod triangle;
 pub mod triangle_mesh;
 pub mod rectangle;
+pub mod cube;

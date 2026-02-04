@@ -2,6 +2,7 @@ use dacquoise::core::integrator::Integrator;
 use dacquoise::core::rng::LcgRng;
 use dacquoise::core::scene_loader::load_scene_with_settings;
 use dacquoise::integrators::path::PathIntegrator;
+use dacquoise::integrators::raymarching::RaymarchingIntegrator;
 use dacquoise::math::constants::{Float, Vector2f, Vector3f};
 use std::env;
 
@@ -59,7 +60,15 @@ fn main() {
         std::process::exit(2);
     }
 
-    let integrator = PathIntegrator::new(max_depth, spp);
+    let integrator_name = load_result.integrator_type.as_deref().unwrap_or("path");
+    let integrator: Box<dyn Integrator> = match integrator_name {
+        "path" => Box::new(PathIntegrator::new(max_depth, spp)),
+        "raymarching" => Box::new(RaymarchingIntegrator::new(max_depth, spp, None)),
+        other => {
+            eprintln!("Unsupported integrator '{}', falling back to path.", other);
+            Box::new(PathIntegrator::new(max_depth, spp))
+        }
+    };
     let pixel = Vector2f::new(x as Float, y as Float);
     let pixel_seed = ((seed & 0xFFF) << 32) | (((y as u64) & 0xFFFF) << 16) | ((x as u64) & 0xFFFF);
     let mut rng = LcgRng::new(pixel_seed);
