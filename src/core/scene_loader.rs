@@ -1465,9 +1465,8 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
         for state in pending_media {
             let (id, medium) = build_medium(state, &scene)?;
             if let Some(id) = id {
-                scene.add_medium(id, medium.clone());
+                scene.add_medium(id, medium);
             }
-            scene.set_global_medium(Some(medium));
         }
     }
 

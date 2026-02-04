@@ -58,7 +58,6 @@ pub struct Scene {
     emitters: Vec<Box<dyn Emitter>>,
     volumes: HashMap<String, Arc<dyn Volume>>,
     media: HashMap<String, Arc<dyn Medium>>,
-    global_medium: Option<Arc<dyn Medium>>,
     scene_bounds: AABB,
     base_dir: std::path::PathBuf,
     bvh: Option<BVH>,
@@ -72,7 +71,6 @@ impl Scene {
             emitters: Vec::new(),
             volumes: HashMap::new(),
             media: HashMap::new(),
-            global_medium: None,
             scene_bounds: AABB::default(),
             base_dir: std::path::PathBuf::new(),
             bvh: None,
@@ -87,7 +85,6 @@ impl Scene {
             emitters,
             volumes: HashMap::new(),
             media: HashMap::new(),
-            global_medium: None,
             scene_bounds: AABB::default(),
             base_dir: std::path::PathBuf::new(),
             bvh: None,
@@ -102,7 +99,6 @@ impl Scene {
             emitters,
             volumes: HashMap::new(),
             media: HashMap::new(),
-            global_medium: None,
             scene_bounds: AABB::default(),
             base_dir: std::path::PathBuf::new(),
             bvh: None,
@@ -177,14 +173,6 @@ impl Scene {
 
     pub fn media(&self) -> &HashMap<String, Arc<dyn Medium>> {
         &self.media
-    }
-
-    pub fn set_global_medium(&mut self, medium: Option<Arc<dyn Medium>>) {
-        self.global_medium = medium;
-    }
-
-    pub fn global_medium(&self) -> Option<Arc<dyn Medium>> {
-        self.global_medium.clone()
     }
 
     pub fn scene_bounds(&self) -> &AABB {
