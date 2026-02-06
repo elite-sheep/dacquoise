@@ -6,7 +6,7 @@ use crate::core::rng::LcgRng;
 use crate::core::scene::Scene;
 use crate::math::bitmap::Bitmap;
 use crate::math::constants::{Float, Vector2f, Vector3f};
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -56,6 +56,11 @@ impl Renderer for SimpleRenderer {
         let integrator_ref: &dyn Integrator = self.integrator.as_ref();
 
         let progress = ProgressBar::new(total_blocks as u64);
+        if std::env::var_os("DACQUOISE_PROGRESS").is_some() {
+            progress.set_draw_target(ProgressDrawTarget::term_like(Box::new(
+                console::Term::buffered_stderr(),
+            )));
+        }
         progress.set_style(
             ProgressStyle::with_template("[{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} blocks")
                 .unwrap_or_else(|_| ProgressStyle::default_bar()),
@@ -129,7 +134,7 @@ impl Renderer for SimpleRenderer {
         let bitmap = sensor.bitmap_mut();
         for y in 0..height {
             for x in 0..width {
-                bitmap[(x, y)] = output[x + width * y];
+                bitmap.set_pixel(x, y, output[x + width * y]);
             }
         }
         let bitmap = bitmap.clone();

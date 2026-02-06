@@ -1,28 +1,7 @@
 // Copyright 2020 TwoCookingMice
 
-#![allow(dead_code)]
-
-pub extern crate nalgebra as na;
-
-mod core;
-mod io;
-mod integrators;
-mod materials;
-mod math;
-mod emitters;
-mod media;
-mod renderers;
-mod sensors;
-mod shapes;
-mod textures;
-mod volumes;
-
-use self::core::scene_loader::load_scene_with_settings;
-use self::core::integrator::Integrator;
-use self::integrators::path::PathIntegrator;
-use self::integrators::raymarching::RaymarchingIntegrator;
-use self::io::exr_utils;
-use self::renderers::simple::{ SimpleRenderer, Renderer };
+use dacquoise::io::exr_utils;
+use dacquoise::render_scene;
 
 use std::env;
 
@@ -67,23 +46,12 @@ fn main() {
         i += 1;
     }
 
-    let load_result = load_scene_with_settings(input_path)
-        .expect("failed to load scene");
-
-    let mut scene = load_result.scene;
-    let spp = spp_override.or(load_result.samples_per_pixel).unwrap_or(1);
-    let max_depth = max_depth_override.or(load_result.max_depth).unwrap_or(1);
-    let integrator_name = load_result.integrator_type.as_deref().unwrap_or("path");
-    let integrator: Box<dyn Integrator> = match integrator_name {
-        "path" => Box::new(PathIntegrator::new(max_depth, spp)),
-        "raymarching" => Box::new(RaymarchingIntegrator::new(max_depth, spp, None)),
-        other => {
-            eprintln!("Unsupported integrator '{}', falling back to path.", other);
-            Box::new(PathIntegrator::new(max_depth, spp))
+    let image = match render_scene(input_path, spp_override, max_depth_override, seed, camera_id) {
+        Ok(image) => image,
+        Err(err) => {
+            eprintln!("Render failed: {}", err);
+            std::process::exit(1);
         }
     };
-
-    let renderer: SimpleRenderer = SimpleRenderer::new(integrator, camera_id, seed);
-    let image = renderer.render(&mut scene);
     exr_utils::write_exr_to_file(&image.raw_copy(), image.width(), image.height(), output_path);
 }
