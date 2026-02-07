@@ -87,6 +87,24 @@ height, columns = raw.shape
 width = columns // 3
 ```
 
+Python scene loading (requires `--features python` build):
+```
+import dacquoise as dq
+
+scene = dq.load_scene("scenes/cbox/cbox.xml")
+keys = scene.raw_data_keys()
+raw = scene.raw_data_item("bsdf.reflectance.data")
+raw2 = scene.data["bsdf.reflectance.data"]
+```
+
+Python rendering API (requires `--features python` build):
+```
+import dacquoise as dq
+
+scene = dq.load_scene("scenes/cbox/cbox.xml")
+image = dq.render(scene, 128, 3)
+```
+
 Sample scenes download [link](https://drive.google.com/drive/folders/1CVsNjM_GvmVP8oyHzRgteWlzTVGmjJnl?usp=sharing).
 
 ## Developer Notes
