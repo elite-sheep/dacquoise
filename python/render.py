@@ -44,7 +44,8 @@ def main() -> int:
     if args.progress:
         os.environ["DACQUOISE_PROGRESS"] = "1"
 
-    matrix = dacquoise.render(args.scene, args.spp, args.max_depth)
+    scene = dacquoise.load_scene(args.scene)
+    matrix = dacquoise.render(scene, args.spp, args.max_depth)
     matrix = np.asarray(matrix)
     height, width_times_three = matrix.shape
 

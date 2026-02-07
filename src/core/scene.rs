@@ -10,7 +10,7 @@ use crate::core::shape::Shape;
 use crate::core::volume::Volume;
 use crate::emitters::area::AreaEmitter;
 use crate::math::aabb::AABB;
-use crate::math::constants::{ Float, Vector2f, Vector3f };
+use crate::math::constants::{ Float, MatrixXF, Vector2f, Vector3f };
 use crate::math::ray::Ray3f;
 use crate::math::spectrum::{RGBSpectrum, Spectrum};
 use std::collections::HashMap;
@@ -52,12 +52,33 @@ impl SceneObject {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct RawDataView {
+    pub ptr: *const Float,
+    pub rows: usize,
+    pub cols: usize,
+}
+
+unsafe impl Send for RawDataView {}
+unsafe impl Sync for RawDataView {}
+
+impl RawDataView {
+    pub fn from_matrix(matrix: &MatrixXF) -> Self {
+        Self {
+            ptr: matrix.as_slice().as_ptr(),
+            rows: matrix.nrows(),
+            cols: matrix.ncols(),
+        }
+    }
+}
+
 pub struct Scene {
     objects: Vec<SceneObject>,
     sensors: Vec<Box<dyn Sensor>>,
     emitters: Vec<Box<dyn Emitter>>,
     volumes: HashMap<String, Arc<dyn Volume>>,
     media: HashMap<String, Arc<dyn Medium>>,
+    raw_data: HashMap<String, RawDataView>,
     scene_bounds: AABB,
     base_dir: std::path::PathBuf,
     bvh: Option<BVH>,
@@ -71,6 +92,7 @@ impl Scene {
             emitters: Vec::new(),
             volumes: HashMap::new(),
             media: HashMap::new(),
+            raw_data: HashMap::new(),
             scene_bounds: AABB::default(),
             base_dir: std::path::PathBuf::new(),
             bvh: None,
@@ -85,6 +107,7 @@ impl Scene {
             emitters,
             volumes: HashMap::new(),
             media: HashMap::new(),
+            raw_data: HashMap::new(),
             scene_bounds: AABB::default(),
             base_dir: std::path::PathBuf::new(),
             bvh: None,
@@ -99,6 +122,7 @@ impl Scene {
             emitters,
             volumes: HashMap::new(),
             media: HashMap::new(),
+            raw_data: HashMap::new(),
             scene_bounds: AABB::default(),
             base_dir: std::path::PathBuf::new(),
             bvh: None,
@@ -173,6 +197,22 @@ impl Scene {
 
     pub fn media(&self) -> &HashMap<String, Arc<dyn Medium>> {
         &self.media
+    }
+
+    pub fn add_raw_data(&mut self, key: String, view: RawDataView) {
+        self.raw_data.insert(key, view);
+    }
+
+    pub fn set_raw_data(&mut self, raw_data: HashMap<String, RawDataView>) {
+        self.raw_data = raw_data;
+    }
+
+    pub fn raw_data(&self) -> &HashMap<String, RawDataView> {
+        &self.raw_data
+    }
+
+    pub fn raw_data_view(&self, key: &str) -> Option<RawDataView> {
+        self.raw_data.get(key).copied()
     }
 
     pub fn scene_bounds(&self) -> &AABB {
