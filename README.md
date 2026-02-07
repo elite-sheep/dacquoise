@@ -77,16 +77,6 @@ Python rendering:
 python python/render.py <scene.xml> --spp <samples> --max-depth <depth> --out <output.exr> --progress
 ```
 
-Python texture access (requires `--features python` build):
-```
-import dacquoise as dq
-
-# Returns a NumPy matrix of shape (height, width * 3) in RGB order.
-raw = dq.texture_raw("assets/texture.exr", True)
-height, columns = raw.shape
-width = columns // 3
-```
-
 Python scene loading (requires `--features python` build):
 ```
 import dacquoise as dq

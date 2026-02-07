@@ -60,7 +60,6 @@ mod python {
     use crate::core::integrator::Integrator;
     use crate::integrators::path::PathIntegrator;
     use crate::renderers::simple::{Renderer, SimpleRenderer};
-    use crate::textures::image::ImageTexture;
     use crate::math::constants::MatrixXF;
     use pyo3::exceptions::PyRuntimeError;
     use pyo3::prelude::*;
@@ -139,19 +138,10 @@ mod python {
         Ok(matrix_to_numpy(py, image.matrix()))
     }
 
-    #[pyfunction]
-    fn texture_raw(py: Python<'_>, path: &str, srgb: Option<bool>) -> PyResult<PyObject> {
-        let srgb = srgb.unwrap_or(true);
-        let texture =
-            ImageTexture::from_file_with_srgb(path, srgb).map_err(PyRuntimeError::new_err)?;
-        Ok(matrix_to_numpy(py, texture.raw_matrix()))
-    }
-
     #[pymodule]
     fn dacquoise(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         m.add_function(wrap_pyfunction!(render, m)?)?;
         m.add_function(wrap_pyfunction!(load_scene, m)?)?;
-        m.add_function(wrap_pyfunction!(texture_raw, m)?)?;
         Ok(())
     }
 }
