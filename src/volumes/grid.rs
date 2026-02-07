@@ -1,14 +1,15 @@
 // Copyright @yucwang 2026
 
 use crate::core::volume::Volume;
+use crate::core::scene::RawDataView;
 use crate::math::aabb::AABB;
-use crate::math::constants::{Float, Vector3f};
+use crate::math::constants::{Float, MatrixXF, Vector3f};
 use crate::math::transform::Transform;
 use crate::volumes::{wrap_coord3, VolumeFilterMode, VolumeWrapMode};
 use std::fs;
 
 pub struct GridVolume {
-    data: Vec<Float>,
+    data: MatrixXF,
     xres: usize,
     yres: usize,
     zres: usize,
@@ -67,16 +68,25 @@ impl GridVolume {
         let xres = xres as usize;
         let yres = yres as usize;
         let zres = zres as usize;
-        let expected = xres
-            .checked_mul(yres)
-            .and_then(|v| v.checked_mul(zres))
-            .and_then(|v| v.checked_mul(channels))
+        let rows = yres
+            .checked_mul(zres)
             .ok_or_else(|| "vol dimensions overflow".to_string())?;
-        let mut data = Vec::with_capacity(expected);
+        let cols = xres
+            .checked_mul(channels)
+            .ok_or_else(|| "vol dimensions overflow".to_string())?;
+        let mut data = MatrixXF::zeros(rows, cols);
 
-        for _ in 0..expected {
-            let v = read_f32(&bytes, &mut cursor)?;
-            data.push(v);
+        for z in 0..zres {
+            for y in 0..yres {
+                let row = z * yres + y;
+                for x in 0..xres {
+                    let base = x * channels;
+                    for c in 0..channels {
+                        let v = read_f32(&bytes, &mut cursor)?;
+                        data[(row, base + c)] = v;
+                    }
+                }
+            }
         }
 
         Ok(Self {
@@ -109,9 +119,14 @@ impl GridVolume {
         self.use_grid_bbox = use_grid_bbox;
     }
 
+    pub fn raw_data_view(&self) -> RawDataView {
+        RawDataView::from_matrix(&self.data)
+    }
+
     fn fetch(&self, x: usize, y: usize, z: usize, channel: usize) -> Float {
-        let idx = ((z * self.yres + y) * self.xres + x) * self.channels + channel;
-        self.data[idx]
+        let row = z * self.yres + y;
+        let col = x * self.channels + channel;
+        self.data[(row, col)]
     }
 
     fn sample_nearest(&self, p: Vector3f) -> Vector3f {
@@ -229,7 +244,7 @@ impl Volume for GridVolume {
     }
 
     fn eval(&self, p_world: Vector3f) -> Vector3f {
-        if self.data.is_empty() {
+        if self.data.nrows() == 0 || self.data.ncols() == 0 {
             return Vector3f::zeros();
         }
 

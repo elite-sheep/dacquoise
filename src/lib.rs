@@ -56,6 +56,7 @@ pub fn render_scene(
 #[cfg(feature = "python")]
 mod python {
     use super::render_scene;
+    use crate::textures::image::ImageTexture;
     use pyo3::exceptions::PyRuntimeError;
     use pyo3::prelude::*;
     use nalgebra_py::matrix_to_numpy;
@@ -67,9 +68,18 @@ mod python {
         Ok(matrix_to_numpy(py, image.matrix()))
     }
 
+    #[pyfunction]
+    fn texture_raw(py: Python<'_>, path: &str, srgb: Option<bool>) -> PyResult<PyObject> {
+        let srgb = srgb.unwrap_or(true);
+        let texture =
+            ImageTexture::from_file_with_srgb(path, srgb).map_err(PyRuntimeError::new_err)?;
+        Ok(matrix_to_numpy(py, texture.raw_matrix()))
+    }
+
     #[pymodule]
     fn dacquoise(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
         m.add_function(wrap_pyfunction!(render, m)?)?;
+        m.add_function(wrap_pyfunction!(texture_raw, m)?)?;
         Ok(())
     }
 }

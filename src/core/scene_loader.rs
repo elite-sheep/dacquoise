@@ -7,7 +7,7 @@ use std::path::Path;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
-use crate::core::scene::Scene;
+use crate::core::scene::{RawDataView, Scene};
 use crate::core::medium::Medium;
 use crate::core::volume::Volume;
 use crate::math::constants::{Float, Matrix3f, Matrix4f, Vector3f};
@@ -230,6 +230,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     let mut raymarch_step_size: Option<Float> = None;
 
     let mut bsdfs: HashMap<String, Arc<dyn BSDF>> = HashMap::new();
+    let mut raw_data: HashMap<String, RawDataView> = HashMap::new();
     let mut current_shape_filename: Option<String> = None;
     let mut current_shape_bsdf_ref: Option<String> = None;
     let mut current_shape_bsdf_inline: Option<Arc<dyn BSDF>> = None;
@@ -1147,7 +1148,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                 b"bsdf" => {
                     if let Some(state) = bsdf_stack.pop() {
                         let bsdf_id = state.id.clone();
-                        let bsdf = build_bsdf(state, base_dir)?;
+                        let bsdf = build_bsdf(state, base_dir, &mut raw_data)?;
 
                         if let Some(parent) = bsdf_stack.last_mut() {
                             parent.children.push(bsdf);
@@ -1170,7 +1171,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                         in_medium_volume = false;
                     } else {
                         if let Some(state) = current_volume.take() {
-                            let (id, volume) = build_volume(state, base_dir)?;
+                            let (id, volume) = build_volume(state, base_dir, &mut raw_data)?;
                             scene.add_volume(id, volume);
                         }
                         in_volume = false;
@@ -1288,7 +1289,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                     b"bsdf" => {
                         if let Some(state) = bsdf_stack.pop() {
                             let bsdf_id = state.id.clone();
-                            let bsdf = build_bsdf(state, base_dir)?;
+                            let bsdf = build_bsdf(state, base_dir, &mut raw_data)?;
 
                             if let Some(parent) = bsdf_stack.last_mut() {
                                 parent.children.push(bsdf);
@@ -1311,9 +1312,9 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                             in_medium_volume = false;
                         } else {
                             if let Some(state) = current_volume.take() {
-                                let (id, volume) = build_volume(state, base_dir)?;
-                                scene.add_volume(id, volume);
-                            }
+                            let (id, volume) = build_volume(state, base_dir, &mut raw_data)?;
+                            scene.add_volume(id, volume);
+                        }
                             in_volume = false;
                             in_volume_transform = false;
                         }
@@ -1460,6 +1461,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     }
 
     scene.build_bvh();
+    scene.set_raw_data(raw_data);
 
     if !pending_media.is_empty() {
         for state in pending_media {
@@ -1494,7 +1496,12 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
     })
 }
 
-fn build_bsdf(state: BsdfState, base_dir: &Path) -> Result<Arc<dyn BSDF>, SceneLoadError> {
+fn build_bsdf(
+    state: BsdfState,
+    base_dir: &Path,
+    raw_data: &mut HashMap<String, RawDataView>,
+) -> Result<Arc<dyn BSDF>, SceneLoadError> {
+    let bsdf_id = state.id.clone();
     match state.bsdf_type.as_str() {
         "diffuse" => {
             let texture = if let Some(tex) = state.texture {
@@ -1508,6 +1515,10 @@ fn build_bsdf(state: BsdfState, base_dir: &Path) -> Result<Arc<dyn BSDF>, SceneL
                     };
                     let mut image = ImageTexture::from_file_with_srgb(&filename, !tex.raw)
                         .map_err(|e| SceneLoadError::Parse(e))?;
+                    let raw_view = bsdf_id.as_ref().map(|id| {
+                        let key = format!("{}.reflectance.data", id);
+                        (key, image.raw_data_view())
+                    });
                     if let Some(filter) = tex.filter_type {
                         let filter = filter.trim().to_lowercase();
                         let mode = match filter.as_str() {
@@ -1532,6 +1543,9 @@ fn build_bsdf(state: BsdfState, base_dir: &Path) -> Result<Arc<dyn BSDF>, SceneL
                         image.set_wrap_mode(mode);
                     }
                     image.set_uv_transform(tex.to_uv);
+                    if let Some((key, view)) = raw_view {
+                        raw_data.insert(key, view);
+                    }
                     Arc::new(image) as Arc<dyn crate::core::texture::Texture>
                 } else {
                     let refl = state.reflectance.unwrap_or(RGBSpectrum::new(0.5, 0.5, 0.5));
@@ -1625,7 +1639,11 @@ fn build_bsdf(state: BsdfState, base_dir: &Path) -> Result<Arc<dyn BSDF>, SceneL
     }
 }
 
-fn build_volume(state: VolumeState, base_dir: &Path) -> Result<(String, Arc<dyn Volume>), SceneLoadError> {
+fn build_volume(
+    state: VolumeState,
+    base_dir: &Path,
+    raw_data: &mut HashMap<String, RawDataView>,
+) -> Result<(String, Arc<dyn Volume>), SceneLoadError> {
     let id = state.id.ok_or(SceneLoadError::MissingField("volume.id"))?;
     match state.volume_type.as_str() {
         "const" => {
@@ -1678,6 +1696,8 @@ fn build_volume(state: VolumeState, base_dir: &Path) -> Result<(String, Arc<dyn 
             if let Some(use_grid_bbox) = state.use_grid_bbox {
                 volume.set_use_grid_bbox(use_grid_bbox);
             }
+            let key = format!("{}.data", id);
+            raw_data.insert(key, volume.raw_data_view());
             Ok((id, Arc::new(volume)))
         }
         other => Err(SceneLoadError::Parse(format!("unsupported volume type: {}", other))),
