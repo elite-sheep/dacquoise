@@ -1,6 +1,6 @@
 // Copyright @yucwang 2026
 
-use crate::core::computation_node::ComputationNode;
+use crate::core::computation_node::{ComputationNode, generate_node_id};
 use crate::core::emitter::{Emitter, EmitterFlag};
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::tangent_frame::build_tangent_frame;
@@ -10,6 +10,7 @@ use crate::math::spectrum::RGBSpectrum;
 use crate::math::warp::sample_uniform_disk_concentric;
 
 pub struct DirectionalEmitter {
+    id: String,
     pub direction: Vector3f,
     pub irradiance: RGBSpectrum,
     bsphere_center: Vector3f,
@@ -17,8 +18,9 @@ pub struct DirectionalEmitter {
 }
 
 impl DirectionalEmitter {
-    pub fn new_with(direction: Vector3f, irradiance: RGBSpectrum) -> Self {
+    pub fn new_with(direction: Vector3f, irradiance: RGBSpectrum, id: Option<String>) -> Self {
         Self {
+            id: id.unwrap_or_else(|| generate_node_id("DirectionalEmitter")),
             direction,
             irradiance,
             bsphere_center: Vector3f::zeros(),
@@ -28,6 +30,10 @@ impl DirectionalEmitter {
 }
 
 impl ComputationNode for DirectionalEmitter {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     fn to_string(&self) -> String {
         String::from("DirectionalEmitter")
     }
@@ -36,6 +42,7 @@ impl ComputationNode for DirectionalEmitter {
 impl Emitter for DirectionalEmitter {
     fn new() -> Self {
         Self {
+            id: generate_node_id("DirectionalEmitter"),
             direction: Vector3f::new(0.0, 0.0, -1.0),
             irradiance: RGBSpectrum::default(),
             bsphere_center: Vector3f::zeros(),

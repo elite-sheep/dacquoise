@@ -1,7 +1,7 @@
 // Copyright @yucwang 2023
 
 use crate::core::bsdf::{BSDFSampleRecord, BSDFEvalResult, BSDF};
-use crate::core::computation_node::ComputationNode;
+use crate::core::computation_node::{ComputationNode, generate_node_id};
 use crate::core::texture::Texture;
 use crate::math::constants::{ INV_PI, Vector2f, Vector3f };
 use crate::math::spectrum::RGBSpectrum;
@@ -9,10 +9,15 @@ use crate::math::warp::{ sample_cosine_hemisphere, sample_cosine_hemisphere_pdf 
 use std::sync::Arc;
 
 pub struct LambertianDiffuseBSDF {
+    id: String,
     texture: Arc<dyn Texture>,
 }
 
 impl ComputationNode for LambertianDiffuseBSDF {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     fn to_string(&self) -> String {
         String::from("LambertianDiffuseBSDF: {}")
     }
@@ -61,8 +66,9 @@ impl BSDF for LambertianDiffuseBSDF {
 }
 
 impl LambertianDiffuseBSDF {
-    pub fn new(texture: Arc<dyn Texture>) -> Self {
+    pub fn new(texture: Arc<dyn Texture>, id: Option<String>) -> Self {
         Self {
+            id: id.unwrap_or_else(|| generate_node_id("LambertianDiffuseBSDF")),
             texture,
         }
     }

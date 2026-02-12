@@ -1,6 +1,6 @@
 // Copyright @yucwang 2026
 
-use crate::core::computation_node::ComputationNode;
+use crate::core::computation_node::{ComputationNode, generate_node_id};
 use crate::core::emitter::{Emitter, EmitterFlag};
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::tangent_frame::build_tangent_frame;
@@ -13,6 +13,7 @@ use crate::core::texture::Texture;
 use crate::textures::image::ImageTexture;
 
 pub struct EnvMap {
+    id: String,
     texture: ImageTexture,
     scale: Float,
     to_world: Transform,
@@ -28,6 +29,10 @@ pub struct EnvMap {
 
 impl EnvMap {
     pub fn from_file(path: &str, scale: Float) -> std::result::Result<Self, String> {
+        Self::from_file_with_id(path, scale, None)
+    }
+
+    pub fn from_file_with_id(path: &str, scale: Float, id: Option<String>) -> std::result::Result<Self, String> {
         let texture = ImageTexture::from_file(path)?;
         let (width, height) = texture.dimensions();
         if width == 0 || height == 0 {
@@ -35,6 +40,7 @@ impl EnvMap {
         }
 
         let mut emitter = Self {
+            id: id.unwrap_or_else(|| generate_node_id("EnvMap")),
             texture,
             scale,
             to_world: Transform::default(),
@@ -176,6 +182,10 @@ impl EnvMap {
 }
 
 impl ComputationNode for EnvMap {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     fn to_string(&self) -> String {
         String::from("EnvMap")
     }
@@ -185,6 +195,7 @@ impl Emitter for EnvMap {
     fn new() -> Self {
         let texture = ImageTexture::from_rgb(0.0, 0.0, 0.0);
         Self {
+            id: generate_node_id("EnvMap"),
             texture,
             scale: 1.0,
             to_world: Transform::default(),

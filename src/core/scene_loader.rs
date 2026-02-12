@@ -1339,6 +1339,7 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 let emitter = DirectionalEmitter::new_with(
                                     direction,
                                     irradiance,
+                                    None,
                                 );
                                 scene.add_emitter(Box::new(emitter));
                             } else if current_emitter_type.as_deref() == Some("envmap") {
@@ -1401,11 +1402,11 @@ fn parse_scene(xml: &str, base_dir: &Path) -> Result<SceneLoadResult, SceneLoadE
                                 }
                                 Some("rectangle") => {
                                     let transform = Transform::new(current_shape_transform);
-                                    Arc::new(Rectangle::new(transform))
+                                    Arc::new(Rectangle::new(transform, current_shape_id.clone()))
                                 }
                                 Some("cube") => {
                                     let transform = Transform::new(current_shape_transform);
-                                    Arc::new(Cube::new(transform))
+                                    Arc::new(Cube::new(transform, current_shape_id.clone()))
                                 }
                                 Some(other) => {
                                     return Err(SceneLoadError::Parse(format!("unsupported shape type: {}", other)));
@@ -1555,7 +1556,7 @@ fn build_bsdf(
                 let refl = state.reflectance.unwrap_or(RGBSpectrum::new(0.5, 0.5, 0.5));
                 Arc::new(ConstantTexture::new(refl)) as Arc<dyn crate::core::texture::Texture>
             };
-            Ok(Arc::new(LambertianDiffuseBSDF::new(texture)) as Arc<dyn BSDF>)
+            Ok(Arc::new(LambertianDiffuseBSDF::new(texture, state.id.clone())) as Arc<dyn BSDF>)
         }
         "roughconductor" | "conductor" => {
             let dist = state.distribution.as_deref().unwrap_or("beckmann").to_lowercase();
@@ -1585,6 +1586,7 @@ fn build_bsdf(
                 eta,
                 k,
                 spec,
+                state.id.clone(),
             )) as Arc<dyn BSDF>)
         }
         "roughdielectric" | "dielectric" => {
@@ -1617,6 +1619,7 @@ fn build_bsdf(
                 ext_ior,
                 spec_reflect,
                 spec_trans,
+                state.id.clone(),
             )) as Arc<dyn BSDF>)
         }
         "blendbsdf" => {
@@ -1624,7 +1627,7 @@ fn build_bsdf(
                 return Err(SceneLoadError::Parse("blendbsdf expects exactly two bsdf children".to_string()));
             }
             let weight = state.weight.unwrap_or(0.5);
-            Ok(Arc::new(BlendBSDF::new(state.children[0].clone(), state.children[1].clone(), weight)) as Arc<dyn BSDF>)
+            Ok(Arc::new(BlendBSDF::new(state.children[0].clone(), state.children[1].clone(), weight, state.id.clone())) as Arc<dyn BSDF>)
         }
         "twosided" => {
             if state.children.len() != 1 {
@@ -1633,7 +1636,7 @@ fn build_bsdf(
             Ok(state.children[0].clone())
         }
         "null" => {
-            Ok(Arc::new(NullBSDF::new()) as Arc<dyn BSDF>)
+            Ok(Arc::new(NullBSDF::new(state.id.clone())) as Arc<dyn BSDF>)
         }
         other => Err(SceneLoadError::Parse(format!("unsupported bsdf type: {}", other))),
     }

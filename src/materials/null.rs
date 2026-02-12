@@ -1,19 +1,27 @@
 // Copyright @yucwang 2026
 
 use crate::core::bsdf::{BSDFSampleRecord, BSDFEvalResult, BSDF};
-use crate::core::computation_node::ComputationNode;
+use crate::core::computation_node::{ComputationNode, generate_node_id};
 use crate::math::constants::{Vector2f, Vector3f};
 use crate::math::spectrum::RGBSpectrum;
 
-pub struct NullBSDF;
+pub struct NullBSDF {
+    id: String,
+}
 
 impl NullBSDF {
-    pub fn new() -> Self {
-        Self
+    pub fn new(id: Option<String>) -> Self {
+        Self {
+            id: id.unwrap_or_else(|| generate_node_id("NullBSDF")),
+        }
     }
 }
 
 impl ComputationNode for NullBSDF {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     fn to_string(&self) -> String {
         String::from("NullBSDF")
     }
@@ -69,7 +77,7 @@ mod tests {
 
     #[test]
     fn test_sample_opposite_direction() {
-        let bsdf = NullBSDF::new();
+        let bsdf = NullBSDF::new(None);
         let wi = Vector3f::new(0.1, -0.2, 0.97).normalize();
         let sample = bsdf.sample(Vector2f::new(0.3, 0.7), Vector2f::new(0.1, 0.9), wi);
         assert_close(sample.wo.x, -wi.x);
@@ -80,7 +88,7 @@ mod tests {
 
     #[test]
     fn test_eval_delta_response() {
-        let bsdf = NullBSDF::new();
+        let bsdf = NullBSDF::new(None);
         let wi = Vector3f::new(0.0, 0.0, 1.0);
         let wo = -wi;
         let mut record = BSDFSampleRecord::default();
@@ -95,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_eval_non_delta_is_zero() {
-        let bsdf = NullBSDF::new();
+        let bsdf = NullBSDF::new(None);
         let mut record = BSDFSampleRecord::default();
         record.wi = Vector3f::new(0.0, 0.0, 1.0);
         record.wo = Vector3f::new(0.0, 1.0, 0.0);
@@ -108,7 +116,7 @@ mod tests {
 
     #[test]
     fn test_sample_and_eval_matches_eval() {
-        let bsdf = NullBSDF::new();
+        let bsdf = NullBSDF::new(None);
         let wi = Vector3f::new(0.0, 0.0, 1.0);
         let result = bsdf.sample_and_eval(Vector2f::new(0.2, 0.8), Vector2f::new(0.4, 0.6), wi);
         assert_close(result.pdf, 1.0);

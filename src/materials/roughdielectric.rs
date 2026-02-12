@@ -1,7 +1,7 @@
 // Copyright @yucwang 2026
 
 use crate::core::bsdf::{BSDFSampleRecord, BSDFEvalResult, BSDF};
-use crate::core::computation_node::ComputationNode;
+use crate::core::computation_node::{ComputationNode, generate_node_id};
 use crate::math::constants::{Float, Vector2f, Vector3f};
 use crate::math::spectrum::RGBSpectrum;
 use crate::materials::microfacet::{
@@ -13,6 +13,7 @@ use crate::materials::microfacet::{
 };
 
 pub struct RoughDielectricBSDF {
+    id: String,
     int_ior: Float,
     ext_ior: Float,
     eta: Float,
@@ -23,6 +24,10 @@ pub struct RoughDielectricBSDF {
 }
 
 impl ComputationNode for RoughDielectricBSDF {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     fn to_string(&self) -> String {
         String::from("RoughDielectricBSDF")
     }
@@ -38,10 +43,12 @@ impl RoughDielectricBSDF {
         ext_ior: Float,
         specular_reflectance: RGBSpectrum,
         specular_transmittance: RGBSpectrum,
+        id: Option<String>,
     ) -> Self {
         let eta = int_ior / ext_ior;
         let inv_eta = ext_ior / int_ior;
         Self {
+            id: id.unwrap_or_else(|| generate_node_id("RoughDielectricBSDF")),
             int_ior,
             ext_ior,
             eta,

@@ -131,7 +131,7 @@ impl Scene {
 
     pub fn add_object(&mut self, object: SceneObject) {
         let emitter = if !object.emission.is_black() {
-            Some(AreaEmitter::from_shape(object.shape.clone(), object.emission))
+            Some(AreaEmitter::from_shape(object.shape.clone(), object.emission, None))
         } else {
             None
         };
@@ -289,6 +289,7 @@ impl Scene {
                 emitters.push(Box::new(AreaEmitter::from_shape(
                     object.shape.clone(),
                     object.emission,
+                    None,
                 )));
             }
         }

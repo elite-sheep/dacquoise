@@ -1,6 +1,6 @@
 // Copyright @yucwang 2026
 
-use crate::core::computation_node::ComputationNode;
+use crate::core::computation_node::{ComputationNode, generate_node_id};
 use crate::core::emitter::{Emitter, EmitterFlag};
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::shape::Shape;
@@ -12,17 +12,22 @@ use crate::shapes::triangle::Triangle;
 use std::sync::Arc;
 
 pub struct AreaEmitter {
+    id: String,
     shape: Arc<dyn Shape>,
     radiance: RGBSpectrum,
 }
 
 impl AreaEmitter {
-    pub fn from_shape(shape: Arc<dyn Shape>, radiance: RGBSpectrum) -> Self {
-        Self { shape, radiance }
+    pub fn from_shape(shape: Arc<dyn Shape>, radiance: RGBSpectrum, id: Option<String>) -> Self {
+        Self { id: id.unwrap_or_else(|| generate_node_id("AreaEmitter")), shape, radiance }
     }
 }
 
 impl ComputationNode for AreaEmitter {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     fn to_string(&self) -> String {
         String::from("AreaEmitter")
     }
@@ -31,6 +36,7 @@ impl ComputationNode for AreaEmitter {
 impl Emitter for AreaEmitter {
     fn new() -> Self {
         Self {
+            id: generate_node_id("AreaEmitter"),
             shape: Arc::new(Triangle::new(
                 Vector3f::new(0.0, 0.0, 0.0),
                 Vector3f::new(1.0, 0.0, 0.0),

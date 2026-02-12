@@ -3,25 +3,30 @@
 use std::sync::Arc;
 
 use crate::core::bsdf::{BSDFSampleRecord, BSDFEvalResult, BSDF};
-use crate::core::computation_node::ComputationNode;
+use crate::core::computation_node::{ComputationNode, generate_node_id};
 use crate::math::constants::{Float, Vector2f, Vector3f};
 
 pub struct BlendBSDF {
+    id: String,
     bsdf_a: Arc<dyn BSDF>,
     bsdf_b: Arc<dyn BSDF>,
     weight: Float,
 }
 
 impl ComputationNode for BlendBSDF {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     fn to_string(&self) -> String {
         String::from("BlendBSDF")
     }
 }
 
 impl BlendBSDF {
-    pub fn new(bsdf_a: Arc<dyn BSDF>, bsdf_b: Arc<dyn BSDF>, weight: Float) -> Self {
+    pub fn new(bsdf_a: Arc<dyn BSDF>, bsdf_b: Arc<dyn BSDF>, weight: Float, id: Option<String>) -> Self {
         let weight = weight.max(0.0).min(1.0);
-        Self { bsdf_a, bsdf_b, weight }
+        Self { id: id.unwrap_or_else(|| generate_node_id("BlendBSDF")), bsdf_a, bsdf_b, weight }
     }
 }
 
