@@ -442,7 +442,7 @@ mod tests {
         }
     }
 
-    impl crate::core::computation_node::ComputationNode for TestShape {
+    impl ComputationNode for TestShape {
         fn id(&self) -> &str { "test_shape" }
         fn to_string(&self) -> String { format!("TestShape(t={})", self.t) }
     }
@@ -482,7 +482,7 @@ mod tests {
 
     struct TestBSDF;
 
-    impl crate::core::computation_node::ComputationNode for TestBSDF {
+    impl ComputationNode for TestBSDF {
         fn id(&self) -> &str { "test_bsdf" }
         fn to_string(&self) -> String { String::from("TestBSDF") }
     }
