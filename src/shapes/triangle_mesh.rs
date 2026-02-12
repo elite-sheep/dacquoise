@@ -2,6 +2,7 @@
 
 use super::triangle::Triangle;
 
+use crate::core::computation_node::ComputationNode;
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::shape::Shape;
 use crate::core::bvh::BVH;
@@ -355,6 +356,12 @@ fn ply_property_indices(prop: &Property) -> Option<Vec<usize>> {
         Property::ListFloat(v) => Some(v.iter().map(|x| *x as usize).collect()),
         Property::ListDouble(v) => Some(v.iter().map(|x| *x as usize).collect()),
         _ => None,
+    }
+}
+
+impl ComputationNode for TriangleMesh {
+    fn to_string(&self) -> String {
+        String::from("TriangleMesh")
     }
 }
 

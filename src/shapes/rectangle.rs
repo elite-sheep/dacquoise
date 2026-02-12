@@ -1,5 +1,6 @@
 // Copyright @yucwang 2026
 
+use crate::core::computation_node::ComputationNode;
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::shape::Shape;
 use crate::math::aabb::AABB;
@@ -51,6 +52,12 @@ impl Rectangle {
 
         let uv = Vector2f::new(0.5 * (p_local.x + 1.0), 0.5 * (p_local.y + 1.0));
         Some((p_local, uv))
+    }
+}
+
+impl ComputationNode for Rectangle {
+    fn to_string(&self) -> String {
+        String::from("Rectangle")
     }
 }
 

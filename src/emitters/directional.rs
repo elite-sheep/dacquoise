@@ -1,5 +1,6 @@
 // Copyright @yucwang 2026
 
+use crate::core::computation_node::ComputationNode;
 use crate::core::emitter::{Emitter, EmitterFlag};
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::tangent_frame::build_tangent_frame;
@@ -23,6 +24,12 @@ impl DirectionalEmitter {
             bsphere_center: Vector3f::zeros(),
             bsphere_radius: 1.0,
         }
+    }
+}
+
+impl ComputationNode for DirectionalEmitter {
+    fn to_string(&self) -> String {
+        String::from("DirectionalEmitter")
     }
 }
 

@@ -1,5 +1,6 @@
 // Copyright @yucwang 2026
 
+use crate::core::computation_node::ComputationNode;
 use crate::core::emitter::{Emitter, EmitterFlag};
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::shape::Shape;
@@ -18,6 +19,12 @@ pub struct AreaEmitter {
 impl AreaEmitter {
     pub fn from_shape(shape: Arc<dyn Shape>, radiance: RGBSpectrum) -> Self {
         Self { shape, radiance }
+    }
+}
+
+impl ComputationNode for AreaEmitter {
+    fn to_string(&self) -> String {
+        String::from("AreaEmitter")
     }
 }
 

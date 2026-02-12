@@ -1,5 +1,6 @@
 // Copyright @yucwang 2026
 
+use crate::core::computation_node::ComputationNode;
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::shape::Shape;
 use crate::math::aabb::AABB;
@@ -92,6 +93,12 @@ impl Cube {
             _ => (Vector3f::new(-1.0, a, b), Vector3f::new(-1.0, 0.0, 0.0), Vector2f::new(u.x, u.y)),
         };
         (p_local, n_local, uv)
+    }
+}
+
+impl ComputationNode for Cube {
+    fn to_string(&self) -> String {
+        String::from("Cube")
     }
 }
 

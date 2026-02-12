@@ -1,5 +1,6 @@
 // Copyright @yucwang 2026
 
+use crate::core::computation_node::ComputationNode;
 use crate::core::emitter::{Emitter, EmitterFlag};
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::tangent_frame::build_tangent_frame;
@@ -171,6 +172,12 @@ impl EnvMap {
         } else {
             None
         }
+    }
+}
+
+impl ComputationNode for EnvMap {
+    fn to_string(&self) -> String {
+        String::from("EnvMap")
     }
 }
 
