@@ -55,6 +55,7 @@ pub fn render_scene(
 
 #[cfg(feature = "python")]
 mod python {
+    use crate::core::computation_node::ComputationNode;
     use crate::core::scene::Scene;
     use crate::core::scene_loader::load_scene_with_settings;
     use crate::core::integrator::Integrator;
@@ -103,6 +104,11 @@ mod python {
                 dict.set_item(key, matrix_to_numpy(py, &matrix))?;
             }
             Ok(dict.to_object(py))
+        }
+
+        fn hierarchy(&self) -> String {
+            let scene = self.scene.lock().expect("scene lock");
+            scene.to_string()
         }
 
         fn raw_data_item(&self, py: Python<'_>, key: &str) -> PyResult<Option<PyObject>> {

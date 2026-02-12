@@ -376,7 +376,8 @@ impl ComputationNode for TriangleMesh {
     }
 
     fn to_string(&self) -> String {
-        String::from("TriangleMesh")
+        format!("TriangleMesh [id={}]\n  vertices: Vec<Vector3f>\n  normals: Vec<Vector3f>\n  uvs: Vec<Vector2f>\n  triangles: Vec<Triangle>\n  use_face_normals: bool",
+            self.id)
     }
 }
 

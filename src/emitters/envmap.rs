@@ -187,7 +187,8 @@ impl ComputationNode for EnvMap {
     }
 
     fn to_string(&self) -> String {
-        String::from("EnvMap")
+        format!("EnvMap [id={}]\n  scale: Float\n  to_world: Transform\n  texture: {}",
+            self.id, self.texture.describe())
     }
 }
 

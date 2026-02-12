@@ -43,7 +43,7 @@ pub enum EmitterSample {
     },
 }
 
-pub trait Emitter: Send + Sync {
+pub trait Emitter: crate::core::computation_node::ComputationNode + Send + Sync {
     fn new() -> Self where Self: Sized;
     fn get_flag(&self) -> EmitterFlag;
     fn set_scene_bounds(&mut self, _bounds: &AABB) {}

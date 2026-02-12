@@ -35,7 +35,8 @@ impl ComputationNode for DirectionalEmitter {
     }
 
     fn to_string(&self) -> String {
-        String::from("DirectionalEmitter")
+        format!("DirectionalEmitter [id={}]\n  direction: Vector3f\n  irradiance: RGBSpectrum",
+            self.id)
     }
 }
 

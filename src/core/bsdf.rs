@@ -21,7 +21,7 @@ pub struct BSDFEvalResult {
     pub pdf: Float,
 }
 
-pub trait BSDF: Send + Sync {
+pub trait BSDF: crate::core::computation_node::ComputationNode + Send + Sync {
     fn name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }

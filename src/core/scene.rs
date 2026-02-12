@@ -2,6 +2,7 @@
 
 use crate::core::bsdf::BSDF;
 use crate::core::bvh::BVH;
+use crate::core::computation_node::{ComputationNode, generate_node_id, indent_string};
 use crate::core::emitter::{Emitter, EmitterFlag, EmitterSample};
 use crate::core::interaction::SurfaceIntersection;
 use crate::core::medium::Medium;
@@ -73,6 +74,7 @@ impl RawDataView {
 }
 
 pub struct Scene {
+    id: String,
     objects: Vec<SceneObject>,
     sensors: Vec<Box<dyn Sensor>>,
     emitters: Vec<Box<dyn Emitter>>,
@@ -87,6 +89,7 @@ pub struct Scene {
 impl Scene {
     pub fn new() -> Self {
         Self {
+            id: generate_node_id("Scene"),
             objects: Vec::new(),
             sensors: Vec::new(),
             emitters: Vec::new(),
@@ -102,6 +105,7 @@ impl Scene {
     pub fn with_objects(objects: Vec<SceneObject>) -> Self {
         let emitters = Self::emitters_from_objects(&objects);
         Self {
+            id: generate_node_id("Scene"),
             objects,
             sensors: Vec::new(),
             emitters,
@@ -117,6 +121,7 @@ impl Scene {
     pub fn with_objects_and_sensors(objects: Vec<SceneObject>, sensors: Vec<Box<dyn Sensor>>) -> Self {
         let emitters = Self::emitters_from_objects(&objects);
         Self {
+            id: generate_node_id("Scene"),
             objects,
             sensors,
             emitters,
@@ -391,6 +396,33 @@ impl Scene {
     }
 }
 
+impl ComputationNode for Scene {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn to_string(&self) -> String {
+        let mut lines = vec![format!("Scene [id={}]", self.id)];
+
+        for (i, obj) in self.objects.iter().enumerate() {
+            let name = obj.name.as_deref().unwrap_or("unnamed");
+            lines.push(format!("  object[{}] (name={}):", i, name));
+            lines.push(format!("    shape:\n{}", indent_string(&obj.shape.to_string(), "      ")));
+            lines.push(format!("    material:\n{}", indent_string(&obj.material.to_string(), "      ")));
+        }
+
+        for (i, emitter) in self.emitters.iter().enumerate() {
+            lines.push(format!("  emitter[{}]:\n{}", i, indent_string(&emitter.to_string(), "    ")));
+        }
+
+        for (i, sensor) in self.sensors.iter().enumerate() {
+            lines.push(format!("  sensor[{}]:\n{}", i, indent_string(&sensor.describe(), "    ")));
+        }
+
+        lines.join("\n")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,6 +440,11 @@ mod tests {
         fn new(t: Float) -> Self {
             Self { t }
         }
+    }
+
+    impl crate::core::computation_node::ComputationNode for TestShape {
+        fn id(&self) -> &str { "test_shape" }
+        fn to_string(&self) -> String { format!("TestShape(t={})", self.t) }
     }
 
     impl Shape for TestShape {
@@ -444,6 +481,11 @@ mod tests {
     }
 
     struct TestBSDF;
+
+    impl crate::core::computation_node::ComputationNode for TestBSDF {
+        fn id(&self) -> &str { "test_bsdf" }
+        fn to_string(&self) -> String { String::from("TestBSDF") }
+    }
 
     impl BSDF for TestBSDF {
         fn eval(&self, _sample_record: crate::core::bsdf::BSDFSampleRecord) -> crate::core::bsdf::BSDFEvalResult {

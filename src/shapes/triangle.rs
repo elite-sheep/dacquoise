@@ -25,7 +25,8 @@ impl ComputationNode for Triangle {
     }
 
     fn to_string(&self) -> String {
-        String::from("Triangle: {}")
+        format!("Triangle [id={}]\n  p0: Vector3f\n  p1: Vector3f\n  p2: Vector3f",
+            self.id)
     }
 }
 

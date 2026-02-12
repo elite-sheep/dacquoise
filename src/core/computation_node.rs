@@ -10,6 +10,14 @@ pub fn generate_node_id(type_name: &str) -> String {
     format!("{}_{}", type_name, seq)
 }
 
+/// Indent every line of `s` by prepending `prefix`.
+pub fn indent_string(s: &str, prefix: &str) -> String {
+    s.lines()
+        .map(|line| format!("{}{}", prefix, line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 pub trait ComputationNode {
     /// Return the unique identifier for this computation node.
     fn id(&self) -> &str;

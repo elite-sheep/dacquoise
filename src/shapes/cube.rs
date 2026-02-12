@@ -103,7 +103,7 @@ impl ComputationNode for Cube {
     }
 
     fn to_string(&self) -> String {
-        String::from("Cube")
+        format!("Cube [id={}]", self.id)
     }
 }
 

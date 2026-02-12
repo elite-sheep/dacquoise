@@ -29,7 +29,8 @@ impl ComputationNode for RoughDielectricBSDF {
     }
 
     fn to_string(&self) -> String {
-        String::from("RoughDielectricBSDF")
+        format!("RoughDielectricBSDF [id={}]\n  int_ior: Float\n  ext_ior: Float\n  specular_reflectance: RGBSpectrum\n  specular_transmittance: RGBSpectrum\n  distribution: {}",
+            self.id, self.distribution.describe())
     }
 }
 

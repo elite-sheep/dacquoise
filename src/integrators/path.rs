@@ -225,6 +225,10 @@ impl Integrator for PathIntegrator {
     fn samples_per_pixel(&self) -> u32 {
         self.samples_per_pixel
     }
+
+    fn describe(&self) -> String {
+        String::from("PathIntegrator")
+    }
 }
 
 fn power_heuristic(pdf_a: Float, pdf_b: Float) -> Float {

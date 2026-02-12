@@ -23,7 +23,7 @@ impl ComputationNode for NullBSDF {
     }
 
     fn to_string(&self) -> String {
-        String::from("NullBSDF")
+        format!("NullBSDF [id={}]", self.id)
     }
 }
 

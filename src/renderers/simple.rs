@@ -26,7 +26,8 @@ impl ComputationNode for SimpleRenderer {
     }
 
     fn to_string(&self) -> String {
-        String::from("SimpleRenderer: {}")
+        format!("SimpleRenderer [id={}]\n  camera_id: usize\n  seed: u64\n  integrator: {}",
+            self.id, self.integrator.describe())
     }
 }
 

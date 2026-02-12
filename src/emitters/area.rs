@@ -1,6 +1,6 @@
 // Copyright @yucwang 2026
 
-use crate::core::computation_node::{ComputationNode, generate_node_id};
+use crate::core::computation_node::{ComputationNode, generate_node_id, indent_string};
 use crate::core::emitter::{Emitter, EmitterFlag};
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::shape::Shape;
@@ -29,7 +29,9 @@ impl ComputationNode for AreaEmitter {
     }
 
     fn to_string(&self) -> String {
-        String::from("AreaEmitter")
+        format!("AreaEmitter [id={}]\n  radiance: RGBSpectrum\n  shape:\n{}",
+            self.id,
+            indent_string(&self.shape.to_string(), "    "))
     }
 }
 

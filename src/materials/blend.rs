@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::core::bsdf::{BSDFSampleRecord, BSDFEvalResult, BSDF};
-use crate::core::computation_node::{ComputationNode, generate_node_id};
+use crate::core::computation_node::{ComputationNode, generate_node_id, indent_string};
 use crate::math::constants::{Float, Vector2f, Vector3f};
 
 pub struct BlendBSDF {
@@ -19,7 +19,11 @@ impl ComputationNode for BlendBSDF {
     }
 
     fn to_string(&self) -> String {
-        String::from("BlendBSDF")
+        format!("BlendBSDF [id={}]\n  weight: {:.3}\n  bsdf_a:\n{}\n  bsdf_b:\n{}",
+            self.id,
+            self.weight,
+            indent_string(&self.bsdf_a.to_string(), "    "),
+            indent_string(&self.bsdf_b.to_string(), "    "))
     }
 }
 

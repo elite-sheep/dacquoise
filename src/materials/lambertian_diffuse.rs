@@ -19,7 +19,8 @@ impl ComputationNode for LambertianDiffuseBSDF {
     }
 
     fn to_string(&self) -> String {
-        String::from("LambertianDiffuseBSDF: {}")
+        format!("LambertianDiffuseBSDF [id={}]\n  texture: {}",
+            self.id, self.texture.describe())
     }
 }
 

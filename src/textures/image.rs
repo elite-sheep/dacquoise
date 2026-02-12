@@ -300,6 +300,10 @@ impl ImageTexture {
 }
 
 impl Texture for ImageTexture {
+    fn describe(&self) -> String {
+        String::from("ImageTexture")
+    }
+
     fn eval(&self, uv: Vector2f) -> RGBSpectrum {
         let uv = self.apply_uv_transform(uv);
         match self.filter_mode {

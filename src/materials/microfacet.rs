@@ -68,6 +68,10 @@ pub struct MicrofacetDistribution {
 }
 
 impl MicrofacetDistribution {
+    pub fn describe(&self) -> String {
+        String::from("MicrofacetDistribution\n    m_type: MicrofacetType\n    alpha_u: Float\n    alpha_v: Float\n    sample_visible: bool")
+    }
+
     pub fn new(m_type: MicrofacetType, alpha_u: Float, alpha_v: Float, sample_visible: bool) -> Self {
         let alpha_u = alpha_u.max(1e-4);
         let alpha_v = alpha_v.max(1e-4);

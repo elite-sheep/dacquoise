@@ -25,7 +25,8 @@ impl ComputationNode for RoughConductorBSDF {
     }
 
     fn to_string(&self) -> String {
-        String::from("RoughConductorBSDF")
+        format!("RoughConductorBSDF [id={}]\n  eta: RGBSpectrum\n  k: RGBSpectrum\n  specular_reflectance: RGBSpectrum\n  distribution: {}",
+            self.id, self.distribution.describe())
     }
 }
 

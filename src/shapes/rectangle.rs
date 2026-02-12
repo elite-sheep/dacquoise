@@ -62,7 +62,7 @@ impl ComputationNode for Rectangle {
     }
 
     fn to_string(&self) -> String {
-        String::from("Rectangle")
+        format!("Rectangle [id={}]", self.id)
     }
 }
 
