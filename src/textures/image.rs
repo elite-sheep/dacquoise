@@ -1,7 +1,8 @@
 // Copyright @yucwang 2026
 
 use crate::core::texture::Texture;
-use crate::math::constants::{Float, Matrix3f, Vector2f};
+use crate::core::scene::RawDataView;
+use crate::math::constants::{Float, Matrix3f, MatrixXF, Vector2f};
 use crate::math::spectrum::RGBSpectrum;
 use exr::prelude::*;
 use image::io::Reader as ImageReader;
@@ -24,7 +25,7 @@ pub enum WrapMode {
 pub struct ImageTexture {
     width: usize,
     height: usize,
-    data: Vec<(Float, Float, Float)>,
+    data: MatrixXF,
     filter_mode: FilterMode,
     wrap_mode: WrapMode,
     to_uv: Matrix3f,
@@ -40,7 +41,11 @@ fn srgb_to_linear(v: Float) -> Float {
 
 impl ImageTexture {
     pub fn from_rgb(r: Float, g: Float, b: Float) -> Self {
-        let (width, height, data) = ensure_min_size(1, 1, vec![(r, g, b)]);
+        let mut data = MatrixXF::zeros(1, 3);
+        data[(0, 0)] = r;
+        data[(0, 1)] = g;
+        data[(0, 2)] = b;
+        let (width, height, data) = ensure_min_size(1, 1, data);
         Self::from_data(width, height, data)
     }
 
@@ -49,17 +54,26 @@ impl ImageTexture {
             .no_deep_data()
             .largest_resolution_level()
             .rgba_channels(
-                |resolution, _| ImageTexture {
-                    width: resolution.width(),
-                    height: resolution.height(),
-                    data: vec![(0.0, 0.0, 0.0); resolution.width() * resolution.height()],
-                    filter_mode: FilterMode::Bilinear,
-                    wrap_mode: WrapMode::Repeat,
-                    to_uv: Matrix3f::identity(),
+                |resolution, _| {
+                    let width = resolution.width() as usize;
+                    let height = resolution.height() as usize;
+                    let columns = width * 3;
+                    ImageTexture {
+                        width,
+                        height,
+                        data: MatrixXF::zeros(height, columns),
+                        filter_mode: FilterMode::Bilinear,
+                        wrap_mode: WrapMode::Repeat,
+                        to_uv: Matrix3f::identity(),
+                    }
                 },
                 |image, position, (r, g, b, _a): (f32, f32, f32, f32)| {
-                    let idx = position.y() * image.width + position.x();
-                    image.data[idx] = (r, g, b);
+                    let x = position.x() as usize;
+                    let y = position.y() as usize;
+                    let base = x * 3;
+                    image.data[(y, base)] = r;
+                    image.data[(y, base + 1)] = g;
+                    image.data[(y, base + 2)] = b;
                 },
             )
             .first_valid_layer()
@@ -80,22 +94,28 @@ impl ImageTexture {
             .map_err(|e| format!("failed to decode image {}: {}", path, e))?;
 
         let (width, height) = img.dimensions();
+        let width = width as usize;
+        let height = height as usize;
         let rgb = img.to_rgb32f();
-        let mut data = Vec::with_capacity((width * height) as usize);
+        let columns = width * 3;
+        let mut data = MatrixXF::zeros(height, columns);
         for y in 0..height {
             for x in 0..width {
-                let p = rgb.get_pixel(x, y);
+                let p = rgb.get_pixel(x as u32, y as u32);
                 let (mut r, mut g, mut b) = (p[0], p[1], p[2]);
                 if srgb {
                     r = srgb_to_linear(r);
                     g = srgb_to_linear(g);
                     b = srgb_to_linear(b);
                 }
-                data.push((r, g, b));
+                let base = x * 3;
+                data[(y, base)] = r;
+                data[(y, base + 1)] = g;
+                data[(y, base + 2)] = b;
             }
         }
 
-        let (width, height, data) = ensure_min_size(width as usize, height as usize, data);
+        let (width, height, data) = ensure_min_size(width, height, data);
         Ok(Self::from_data(width, height, data))
     }
 
@@ -117,7 +137,7 @@ impl ImageTexture {
         }
     }
 
-    fn from_data(width: usize, height: usize, data: Vec<(Float, Float, Float)>) -> Self {
+    fn from_data(width: usize, height: usize, data: MatrixXF) -> Self {
         Self {
             width,
             height,
@@ -142,6 +162,23 @@ impl ImageTexture {
 
     pub fn set_uv_transform(&mut self, transform: Matrix3f) {
         self.to_uv = transform;
+    }
+
+    pub fn raw_data_view(&self) -> RawDataView {
+        RawDataView::from_matrix(&self.data)
+    }
+
+    pub fn raw_matrix(&self) -> &MatrixXF {
+        &self.data
+    }
+
+    fn pixel_at(&self, x: usize, y: usize) -> (Float, Float, Float) {
+        let base = x * 3;
+        (
+            self.data[(y, base)],
+            self.data[(y, base + 1)],
+            self.data[(y, base + 2)],
+        )
     }
 
     fn sample_bilinear(&self, uv: Vector2f) -> RGBSpectrum {
@@ -169,15 +206,10 @@ impl ImageTexture {
         let tx = x - x0 as Float;
         let ty = y - y0 as Float;
 
-        let idx00 = y0u * self.width + x0u;
-        let idx10 = y0u * self.width + x1u;
-        let idx01 = y1u * self.width + x0u;
-        let idx11 = y1u * self.width + x1u;
-
-        let (r00, g00, b00) = self.data[idx00];
-        let (r10, g10, b10) = self.data[idx10];
-        let (r01, g01, b01) = self.data[idx01];
-        let (r11, g11, b11) = self.data[idx11];
+        let (r00, g00, b00) = self.pixel_at(x0u, y0u);
+        let (r10, g10, b10) = self.pixel_at(x1u, y0u);
+        let (r01, g01, b01) = self.pixel_at(x0u, y1u);
+        let (r11, g11, b11) = self.pixel_at(x1u, y1u);
 
         let r0 = r00 * (1.0 - tx) + r10 * tx;
         let g0 = g00 * (1.0 - tx) + g10 * tx;
@@ -207,8 +239,7 @@ impl ImageTexture {
         let y = ((1.0 - v) * (self.height as Float) - 0.5).round() as isize;
         let xi = self.wrap_index(x, self.width);
         let yi = self.wrap_index(y, self.height);
-        let idx = yi * self.width + xi;
-        let (r, g, b) = self.data[idx];
+        let (r, g, b) = self.pixel_at(xi, yi);
         RGBSpectrum::new(r, g, b)
     }
 
@@ -269,6 +300,10 @@ impl ImageTexture {
 }
 
 impl Texture for ImageTexture {
+    fn describe(&self) -> String {
+        String::from("ImageTexture")
+    }
+
     fn eval(&self, uv: Vector2f) -> RGBSpectrum {
         let uv = self.apply_uv_transform(uv);
         match self.filter_mode {
@@ -281,15 +316,20 @@ impl Texture for ImageTexture {
 fn ensure_min_size(
     width: usize,
     height: usize,
-    data: Vec<(Float, Float, Float)>,
-) -> (usize, usize, Vec<(Float, Float, Float)>) {
+    data: MatrixXF,
+) -> (usize, usize, MatrixXF) {
     let new_width = width.max(2);
     let new_height = height.max(2);
     if new_width == width && new_height == height {
         return (width, height, data);
     }
 
-    let mut out = vec![(0.0, 0.0, 0.0); new_width * new_height];
+    if width == 0 || height == 0 {
+        let out = MatrixXF::zeros(new_height, new_width * 3);
+        return (new_width, new_height, out);
+    }
+
+    let mut out = MatrixXF::zeros(new_height, new_width * 3);
     for y in 0..new_height {
         let src_y = if height > 1 {
             (y as Float / (new_height as Float - 1.0)) * (height as Float - 1.0)
@@ -310,15 +350,31 @@ fn ensure_min_size(
             let x1 = (x0 + 1).min(width.saturating_sub(1));
             let tx = src_x - x0 as Float;
 
-            let idx00 = y0 * width + x0;
-            let idx10 = y0 * width + x1;
-            let idx01 = y1 * width + x0;
-            let idx11 = y1 * width + x1;
+            let base00 = x0 * 3;
+            let base10 = x1 * 3;
+            let base01 = x0 * 3;
+            let base11 = x1 * 3;
 
-            let (r00, g00, b00) = data[idx00];
-            let (r10, g10, b10) = data[idx10];
-            let (r01, g01, b01) = data[idx01];
-            let (r11, g11, b11) = data[idx11];
+            let (r00, g00, b00) = (
+                data[(y0, base00)],
+                data[(y0, base00 + 1)],
+                data[(y0, base00 + 2)],
+            );
+            let (r10, g10, b10) = (
+                data[(y0, base10)],
+                data[(y0, base10 + 1)],
+                data[(y0, base10 + 2)],
+            );
+            let (r01, g01, b01) = (
+                data[(y1, base01)],
+                data[(y1, base01 + 1)],
+                data[(y1, base01 + 2)],
+            );
+            let (r11, g11, b11) = (
+                data[(y1, base11)],
+                data[(y1, base11 + 1)],
+                data[(y1, base11 + 2)],
+            );
 
             let r0 = r00 * (1.0 - tx) + r10 * tx;
             let g0 = g00 * (1.0 - tx) + g10 * tx;
@@ -332,7 +388,10 @@ fn ensure_min_size(
             let g = g0 * (1.0 - ty) + g1 * ty;
             let b = b0 * (1.0 - ty) + b1 * ty;
 
-            out[y * new_width + x] = (r, g, b);
+            let base = x * 3;
+            out[(y, base)] = r;
+            out[(y, base + 1)] = g;
+            out[(y, base + 2)] = b;
         }
     }
 

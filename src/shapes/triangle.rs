@@ -1,7 +1,7 @@
 // Copyright @yucwang 2023
 
 
-use crate::core::computation_node::ComputationNode;
+use crate::core::computation_node::{ComputationNode, generate_node_id};
 use crate::core::shape::Shape;
 use crate::core::interaction::{ SurfaceIntersection, SurfaceSampleRecord };
 use crate::math::aabb::AABB;
@@ -13,14 +13,20 @@ use crate::math::warp::square_to_triangle;
 use std::option::Option;
 
 pub struct Triangle {
+    id: String,
     p0: Vector3f,
     p1: Vector3f,
     p2: Vector3f
 }
 
 impl ComputationNode for Triangle {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     fn to_string(&self) -> String {
-        String::from("Triangle: {}")
+        format!("Triangle [id={}]\n  p0: Vector3f\n  p1: Vector3f\n  p2: Vector3f",
+            self.id)
     }
 }
 
@@ -107,7 +113,17 @@ impl Shape for Triangle {
 impl Triangle {
     pub fn new(new_p0: Vector3f, new_p1: Vector3f, new_p2: Vector3f) -> Self {
         Triangle {
-            p0: new_p0, 
+            id: generate_node_id("Triangle"),
+            p0: new_p0,
+            p1: new_p1,
+            p2: new_p2,
+        }
+    }
+
+    pub fn new_with_id(new_p0: Vector3f, new_p1: Vector3f, new_p2: Vector3f, id: Option<String>) -> Self {
+        Triangle {
+            id: id.unwrap_or_else(|| generate_node_id("Triangle")),
+            p0: new_p0,
             p1: new_p1,
             p2: new_p2,
         }

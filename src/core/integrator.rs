@@ -9,4 +9,7 @@ use crate::math::spectrum::RGBSpectrum;
 pub trait Integrator: Sync {
     fn trace_ray_forward(&self, scene: &Scene, sensor: &dyn Sensor, pixel: Vector2f, rng: &mut LcgRng) -> RGBSpectrum;
     fn samples_per_pixel(&self) -> u32;
+    fn describe(&self) -> String {
+        String::from("Integrator")
+    }
 }

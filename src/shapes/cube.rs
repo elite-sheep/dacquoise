@@ -1,5 +1,6 @@
 // Copyright @yucwang 2026
 
+use crate::core::computation_node::{ComputationNode, generate_node_id};
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::shape::Shape;
 use crate::math::aabb::AABB;
@@ -9,6 +10,7 @@ use crate::math::spectrum::RGBSpectrum;
 use crate::math::transform::Transform;
 
 pub struct Cube {
+    id: String,
     to_world: Transform,
     face_areas: [Float; 6],
     area: Float,
@@ -16,7 +18,7 @@ pub struct Cube {
 }
 
 impl Cube {
-    pub fn new(to_world: Transform) -> Self {
+    pub fn new(to_world: Transform, id: Option<String>) -> Self {
         let dx = to_world.apply_vector(Vector3f::new(2.0, 0.0, 0.0));
         let dy = to_world.apply_vector(Vector3f::new(0.0, 2.0, 0.0));
         let dz = to_world.apply_vector(Vector3f::new(0.0, 0.0, 2.0));
@@ -26,7 +28,7 @@ impl Cube {
         let face_areas = [area_xy, area_xy, area_xz, area_xz, area_yz, area_yz];
         let area = 2.0 * (area_xy + area_xz + area_yz);
         let inv_area = if area > 0.0 { 1.0 / area } else { 0.0 };
-        Self { to_world, face_areas, area, inv_area }
+        Self { id: id.unwrap_or_else(|| generate_node_id("Cube")), to_world, face_areas, area, inv_area }
     }
 
     fn intersect_local(&self, ray: &Ray3f) -> Option<(Vector3f, Vector3f)> {
@@ -92,6 +94,16 @@ impl Cube {
             _ => (Vector3f::new(-1.0, a, b), Vector3f::new(-1.0, 0.0, 0.0), Vector2f::new(u.x, u.y)),
         };
         (p_local, n_local, uv)
+    }
+}
+
+impl ComputationNode for Cube {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn to_string(&self) -> String {
+        format!("Cube [id={}]", self.id)
     }
 }
 

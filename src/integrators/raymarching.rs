@@ -81,6 +81,10 @@ impl Integrator for RaymarchingIntegrator {
     fn samples_per_pixel(&self) -> u32 {
         self.samples_per_pixel
     }
+
+    fn describe(&self) -> String {
+        String::from("RaymarchingIntegrator")
+    }
 }
 
 fn march_nerf_segment(

@@ -1,6 +1,6 @@
 // Copyright @yucwang 2021
 
-use crate::core::computation_node::ComputationNode;
+use crate::core::computation_node::{ComputationNode, generate_node_id};
 use crate::core::integrator::Integrator;
 use crate::core::rng::LcgRng;
 use crate::core::scene::Scene;
@@ -14,14 +14,20 @@ use std::thread;
 pub use super::renderer::Renderer;
 
 pub struct SimpleRenderer {
+    id: String,
     integrator: Box<dyn Integrator>,
     camera_id: usize,
     seed: u64,
 }
 
 impl ComputationNode for SimpleRenderer {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     fn to_string(&self) -> String {
-        String::from("SimpleRenderer: {}")
+        format!("SimpleRenderer [id={}]\n  camera_id: usize\n  seed: u64\n  integrator: {}",
+            self.id, self.integrator.describe())
     }
 }
 
@@ -146,6 +152,7 @@ impl Renderer for SimpleRenderer {
 impl SimpleRenderer {
     pub fn new(integrator: Box<dyn Integrator>, camera_id: usize, seed: u64) -> Self {
         Self {
+            id: generate_node_id("SimpleRenderer"),
             integrator,
             camera_id,
             seed,

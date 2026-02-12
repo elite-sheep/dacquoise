@@ -1,5 +1,6 @@
 // Copyright @yucwang 2026
 
+use crate::core::computation_node::{ComputationNode, generate_node_id};
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::shape::Shape;
 use crate::math::aabb::AABB;
@@ -9,6 +10,7 @@ use crate::math::spectrum::RGBSpectrum;
 use crate::math::transform::Transform;
 
 pub struct Rectangle {
+    id: String,
     to_world: Transform,
     normal: Vector3f,
     dp_du: Vector3f,
@@ -18,7 +20,7 @@ pub struct Rectangle {
 }
 
 impl Rectangle {
-    pub fn new(to_world: Transform) -> Self {
+    pub fn new(to_world: Transform, id: Option<String>) -> Self {
         let dp_du = to_world.apply_vector(Vector3f::new(2.0, 0.0, 0.0));
         let dp_dv = to_world.apply_vector(Vector3f::new(0.0, 2.0, 0.0));
         let area = dp_du.cross(&dp_dv).norm();
@@ -33,7 +35,7 @@ impl Rectangle {
             }
         }
 
-        Self { to_world, normal, dp_du, dp_dv, area, inv_area }
+        Self { id: id.unwrap_or_else(|| generate_node_id("Rectangle")), to_world, normal, dp_du, dp_dv, area, inv_area }
     }
 
     fn intersect_local(&self, ray: &Ray3f) -> Option<(Vector3f, Vector2f)> {
@@ -51,6 +53,16 @@ impl Rectangle {
 
         let uv = Vector2f::new(0.5 * (p_local.x + 1.0), 0.5 * (p_local.y + 1.0));
         Some((p_local, uv))
+    }
+}
+
+impl ComputationNode for Rectangle {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn to_string(&self) -> String {
+        format!("Rectangle [id={}]", self.id)
     }
 }
 

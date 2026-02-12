@@ -18,6 +18,10 @@ impl Texture for ConstantTexture {
     fn eval(&self, _uv: Vector2f) -> RGBSpectrum {
         self.value
     }
+
+    fn describe(&self) -> String {
+        String::from("ConstantTexture")
+    }
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@
 
 use crate::core::bsdf::BSDF;
 use crate::core::bvh::BVH;
+use crate::core::computation_node::{ComputationNode, generate_node_id, indent_string};
 use crate::core::emitter::{Emitter, EmitterFlag, EmitterSample};
 use crate::core::interaction::SurfaceIntersection;
 use crate::core::medium::Medium;
@@ -10,7 +11,7 @@ use crate::core::shape::Shape;
 use crate::core::volume::Volume;
 use crate::emitters::area::AreaEmitter;
 use crate::math::aabb::AABB;
-use crate::math::constants::{ Float, Vector2f, Vector3f };
+use crate::math::constants::{ Float, MatrixXF, Vector2f, Vector3f };
 use crate::math::ray::Ray3f;
 use crate::math::spectrum::{RGBSpectrum, Spectrum};
 use std::collections::HashMap;
@@ -52,12 +53,34 @@ impl SceneObject {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct RawDataView {
+    pub ptr: *const Float,
+    pub rows: usize,
+    pub cols: usize,
+}
+
+unsafe impl Send for RawDataView {}
+unsafe impl Sync for RawDataView {}
+
+impl RawDataView {
+    pub fn from_matrix(matrix: &MatrixXF) -> Self {
+        Self {
+            ptr: matrix.as_slice().as_ptr(),
+            rows: matrix.nrows(),
+            cols: matrix.ncols(),
+        }
+    }
+}
+
 pub struct Scene {
+    id: String,
     objects: Vec<SceneObject>,
     sensors: Vec<Box<dyn Sensor>>,
     emitters: Vec<Box<dyn Emitter>>,
     volumes: HashMap<String, Arc<dyn Volume>>,
     media: HashMap<String, Arc<dyn Medium>>,
+    raw_data: HashMap<String, RawDataView>,
     scene_bounds: AABB,
     base_dir: std::path::PathBuf,
     bvh: Option<BVH>,
@@ -66,11 +89,13 @@ pub struct Scene {
 impl Scene {
     pub fn new() -> Self {
         Self {
+            id: generate_node_id("Scene"),
             objects: Vec::new(),
             sensors: Vec::new(),
             emitters: Vec::new(),
             volumes: HashMap::new(),
             media: HashMap::new(),
+            raw_data: HashMap::new(),
             scene_bounds: AABB::default(),
             base_dir: std::path::PathBuf::new(),
             bvh: None,
@@ -80,11 +105,13 @@ impl Scene {
     pub fn with_objects(objects: Vec<SceneObject>) -> Self {
         let emitters = Self::emitters_from_objects(&objects);
         Self {
+            id: generate_node_id("Scene"),
             objects,
             sensors: Vec::new(),
             emitters,
             volumes: HashMap::new(),
             media: HashMap::new(),
+            raw_data: HashMap::new(),
             scene_bounds: AABB::default(),
             base_dir: std::path::PathBuf::new(),
             bvh: None,
@@ -94,11 +121,13 @@ impl Scene {
     pub fn with_objects_and_sensors(objects: Vec<SceneObject>, sensors: Vec<Box<dyn Sensor>>) -> Self {
         let emitters = Self::emitters_from_objects(&objects);
         Self {
+            id: generate_node_id("Scene"),
             objects,
             sensors,
             emitters,
             volumes: HashMap::new(),
             media: HashMap::new(),
+            raw_data: HashMap::new(),
             scene_bounds: AABB::default(),
             base_dir: std::path::PathBuf::new(),
             bvh: None,
@@ -107,7 +136,7 @@ impl Scene {
 
     pub fn add_object(&mut self, object: SceneObject) {
         let emitter = if !object.emission.is_black() {
-            Some(AreaEmitter::from_shape(object.shape.clone(), object.emission))
+            Some(AreaEmitter::from_shape(object.shape.clone(), object.emission, None))
         } else {
             None
         };
@@ -173,6 +202,22 @@ impl Scene {
 
     pub fn media(&self) -> &HashMap<String, Arc<dyn Medium>> {
         &self.media
+    }
+
+    pub fn add_raw_data(&mut self, key: String, view: RawDataView) {
+        self.raw_data.insert(key, view);
+    }
+
+    pub fn set_raw_data(&mut self, raw_data: HashMap<String, RawDataView>) {
+        self.raw_data = raw_data;
+    }
+
+    pub fn raw_data(&self) -> &HashMap<String, RawDataView> {
+        &self.raw_data
+    }
+
+    pub fn raw_data_view(&self, key: &str) -> Option<RawDataView> {
+        self.raw_data.get(key).copied()
     }
 
     pub fn scene_bounds(&self) -> &AABB {
@@ -249,6 +294,7 @@ impl Scene {
                 emitters.push(Box::new(AreaEmitter::from_shape(
                     object.shape.clone(),
                     object.emission,
+                    None,
                 )));
             }
         }
@@ -350,6 +396,33 @@ impl Scene {
     }
 }
 
+impl ComputationNode for Scene {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn to_string(&self) -> String {
+        let mut lines = vec![format!("Scene [id={}]", self.id)];
+
+        for (i, obj) in self.objects.iter().enumerate() {
+            let name = obj.name.as_deref().unwrap_or("unnamed");
+            lines.push(format!("  object[{}] (name={}):", i, name));
+            lines.push(format!("    shape:\n{}", indent_string(&obj.shape.to_string(), "      ")));
+            lines.push(format!("    material:\n{}", indent_string(&obj.material.to_string(), "      ")));
+        }
+
+        for (i, emitter) in self.emitters.iter().enumerate() {
+            lines.push(format!("  emitter[{}]:\n{}", i, indent_string(&emitter.to_string(), "    ")));
+        }
+
+        for (i, sensor) in self.sensors.iter().enumerate() {
+            lines.push(format!("  sensor[{}]:\n{}", i, indent_string(&sensor.describe(), "    ")));
+        }
+
+        lines.join("\n")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,6 +440,11 @@ mod tests {
         fn new(t: Float) -> Self {
             Self { t }
         }
+    }
+
+    impl ComputationNode for TestShape {
+        fn id(&self) -> &str { "test_shape" }
+        fn to_string(&self) -> String { format!("TestShape(t={})", self.t) }
     }
 
     impl Shape for TestShape {
@@ -403,6 +481,11 @@ mod tests {
     }
 
     struct TestBSDF;
+
+    impl ComputationNode for TestBSDF {
+        fn id(&self) -> &str { "test_bsdf" }
+        fn to_string(&self) -> String { String::from("TestBSDF") }
+    }
 
     impl BSDF for TestBSDF {
         fn eval(&self, _sample_record: crate::core::bsdf::BSDFSampleRecord) -> crate::core::bsdf::BSDFEvalResult {

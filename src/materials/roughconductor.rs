@@ -1,7 +1,7 @@
 // Copyright @yucwang 2026
 
 use crate::core::bsdf::{BSDFSampleRecord, BSDFEvalResult, BSDF};
-use crate::core::computation_node::ComputationNode;
+use crate::core::computation_node::{ComputationNode, generate_node_id};
 use crate::math::constants::{Float, Vector2f, Vector3f};
 use crate::math::spectrum::RGBSpectrum;
 use crate::materials::microfacet::{
@@ -12,6 +12,7 @@ use crate::materials::microfacet::{
 };
 
 pub struct RoughConductorBSDF {
+    id: String,
     distribution: MicrofacetDistribution,
     eta: RGBSpectrum,
     k: RGBSpectrum,
@@ -19,8 +20,13 @@ pub struct RoughConductorBSDF {
 }
 
 impl ComputationNode for RoughConductorBSDF {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     fn to_string(&self) -> String {
-        String::from("RoughConductorBSDF")
+        format!("RoughConductorBSDF [id={}]\n  eta: RGBSpectrum\n  k: RGBSpectrum\n  specular_reflectance: RGBSpectrum\n  distribution: {}",
+            self.id, self.distribution.describe())
     }
 }
 
@@ -33,8 +39,10 @@ impl RoughConductorBSDF {
         eta: RGBSpectrum,
         k: RGBSpectrum,
         specular_reflectance: RGBSpectrum,
+        id: Option<String>,
     ) -> Self {
         Self {
+            id: id.unwrap_or_else(|| generate_node_id("RoughConductorBSDF")),
             distribution: MicrofacetDistribution::new(m_type, alpha_u, alpha_v, sample_visible),
             eta,
             k,

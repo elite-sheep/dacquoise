@@ -5,4 +5,7 @@ use crate::math::spectrum::RGBSpectrum;
 
 pub trait Texture: Send + Sync {
     fn eval(&self, uv: Vector2f) -> RGBSpectrum;
+    fn describe(&self) -> String {
+        String::from("Texture")
+    }
 }

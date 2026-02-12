@@ -45,6 +45,16 @@ impl PerspectiveCamera {
     }
 }
 
+impl PerspectiveCamera {
+    pub fn width(&self) -> usize {
+        self.bitmap.width()
+    }
+
+    pub fn height(&self) -> usize {
+        self.bitmap.height()
+    }
+}
+
 impl Sensor for PerspectiveCamera {
     fn sample_ray(&self, u: &Vector2f) -> Ray3f {
         let px = (2.0 * u.x - 1.0) * self.aspect * self.tan_half_fov_y;
@@ -67,6 +77,10 @@ impl Sensor for PerspectiveCamera {
 
     fn bitmap_mut(&mut self) -> &mut Bitmap {
         &mut self.bitmap
+    }
+
+    fn describe(&self) -> String {
+        String::from("PerspectiveCamera\n  origin: Vector3f\n  forward: Vector3f\n  right: Vector3f\n  up: Vector3f\n  tan_half_fov_y: Float\n  aspect: Float\n  near_clip: Float\n  far_clip: Float")
     }
 }
 

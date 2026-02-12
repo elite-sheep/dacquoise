@@ -77,7 +77,41 @@ Python rendering:
 python python/render.py <scene.xml> --spp <samples> --max-depth <depth> --out <output.exr> --progress
 ```
 
+Python scene loading (requires `--features python` build):
+```
+import dacquoise as dq
+
+scene = dq.load_scene("scenes/cbox/cbox.xml")
+keys = scene.raw_data_keys()
+raw = scene.raw_data_item("bsdf.reflectance.data")
+raw2 = scene.data["bsdf.reflectance.data"]
+```
+
+Python rendering API (requires `--features python` build):
+```
+import dacquoise as dq
+
+scene = dq.load_scene("scenes/cbox/cbox.xml")
+image = dq.render(scene, 128, 3)
+```
+
 Sample scenes download [link](https://drive.google.com/drive/folders/1CVsNjM_GvmVP8oyHzRgteWlzTVGmjJnl?usp=sharing).
+
+## Developer Notes
+
+Texture data layout:
+- `ImageTexture` stores raw RGB data in a `MatrixXF` sized `height x (width * 3)`.
+- Columns are `x * 3 + channel` (R, G, B) and rows are `y`.
+
+Grid volume data layout:
+- `GridVolume` stores raw values in a `MatrixXF` sized `(zres * yres) x (xres * channels)`.
+- Rows are `z * yres + y`; columns are `x * channels + channel`.
+
+Scene raw data dictionary:
+- `Scene` keeps raw data pointers in a dictionary keyed by IDs.
+- Diffuse image textures use `<bsdf_id>.reflectance.data`.
+- Grid volumes use `<volume_id>.data`.
+- `RawDataView` points to nalgebra's column-major buffer; use `rows`/`cols` for shape.
 
 ## Debug Tools
 

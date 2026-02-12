@@ -2,6 +2,7 @@
 
 use super::triangle::Triangle;
 
+use crate::core::computation_node::{ComputationNode, generate_node_id};
 use crate::core::interaction::{SurfaceIntersection, SurfaceSampleRecord};
 use crate::core::shape::Shape;
 use crate::core::bvh::BVH;
@@ -47,6 +48,7 @@ impl fmt::Display for PlyLoadError {
 impl std::error::Error for PlyLoadError {}
 
 pub struct TriangleMesh {
+    id: String,
     vertices: Vec<Vector3f>,
     normals:  Vec<Vector3f>,
     uvs:      Vec<Vector2f>,
@@ -61,6 +63,10 @@ pub struct TriangleMesh {
 
 impl TriangleMesh {
     pub fn from_obj(path: &str) -> Result<Self, ObjLoadError> {
+        Self::from_obj_with_id(path, None)
+    }
+
+    pub fn from_obj_with_id(path: &str, id: Option<String>) -> Result<Self, ObjLoadError> {
         let obj_set = obj_utils::load_obj_from_file(path)?;
         let mut vertices = Vec::new();
         let mut normals = Vec::new();
@@ -114,6 +120,7 @@ impl TriangleMesh {
         }
 
         let mut mesh = Self {
+            id: id.unwrap_or_else(|| generate_node_id("TriangleMesh")),
             vertices,
             normals,
             uvs,
@@ -130,6 +137,10 @@ impl TriangleMesh {
     }
 
     pub fn from_ply(path: &str) -> Result<Self, PlyLoadError> {
+        Self::from_ply_with_id(path, None)
+    }
+
+    pub fn from_ply_with_id(path: &str, id: Option<String>) -> Result<Self, PlyLoadError> {
         let file = File::open(path)?;
         let parser = Parser::<DefaultElement>::new();
         let ply = parser
@@ -231,6 +242,7 @@ impl TriangleMesh {
         }
 
         let mut mesh = Self {
+            id: id.unwrap_or_else(|| generate_node_id("TriangleMesh")),
             vertices,
             normals,
             uvs,
@@ -355,6 +367,17 @@ fn ply_property_indices(prop: &Property) -> Option<Vec<usize>> {
         Property::ListFloat(v) => Some(v.iter().map(|x| *x as usize).collect()),
         Property::ListDouble(v) => Some(v.iter().map(|x| *x as usize).collect()),
         _ => None,
+    }
+}
+
+impl ComputationNode for TriangleMesh {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn to_string(&self) -> String {
+        format!("TriangleMesh [id={}]\n  vertices: Vec<Vector3f>\n  normals: Vec<Vector3f>\n  uvs: Vec<Vector2f>\n  triangles: Vec<Triangle>\n  use_face_normals: bool",
+            self.id)
     }
 }
 

@@ -1,5 +1,6 @@
 // Copyright @yucwang 2023
 
+use crate::core::computation_node::ComputationNode;
 use crate::math::constants::{ Float, Vector2f, Vector3f };
 use crate::math::spectrum::RGBSpectrum;
 
@@ -21,7 +22,7 @@ pub struct BSDFEvalResult {
     pub pdf: Float,
 }
 
-pub trait BSDF: Send + Sync {
+pub trait BSDF: ComputationNode + Send + Sync {
     fn name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }
